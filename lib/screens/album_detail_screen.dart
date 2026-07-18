@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/album.dart';
 import '../models/song.dart';
 import '../providers/audio_provider.dart';
+import '../providers/user_provider.dart';
 import '../extensions/view_extensions.dart';
 import 'now_playing_screen.dart';
 
@@ -31,10 +32,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   void _playAlbum({bool shuffle = false}) {
     final audioProvider = context.read<AudioProvider>();
+    final userProvider = context.read<UserProvider>();
     if (shuffle) {
       audioProvider.toggleShuffle();
     }
-    audioProvider.playPlaylist(_songs);
+    audioProvider.playPlaylist(_songs, userId: userProvider.userId);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -71,7 +73,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   secondaryText: secondaryText,
                   onTap: () {
                     final audioProvider = context.read<AudioProvider>();
-                    audioProvider.playPlaylist(_songs, startIndex: index);
+                    final userProvider = context.read<UserProvider>();
+                    audioProvider.playPlaylist(
+                      _songs, 
+                      startIndex: index, 
+                      userId: userProvider.userId,
+                    );
                     Navigator.push(
                       context,
                       MaterialPageRoute(

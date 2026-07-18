@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
@@ -5,6 +6,8 @@ import '../models/album.dart';
 import '../models/artist.dart';
 import '../models/release.dart';
 import '../firebase/firestore_service.dart';
+import '../services/view_service.dart';
+import '../models/view_model.dart';
 import '../providers/audio_provider.dart';
 import 'now_playing_screen.dart';
 import 'album_detail_screen.dart';
@@ -25,22 +28,86 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Artist> _artists = [];
   List<Album> _albums = [];
   bool _isLoading = true;
+  StreamSubscription? _historySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _setupHistoryStream();
+  }
+
+  @override
+  void dispose() {
+    _historySubscription?.cancel();
+    super.dispose();
+  }
+
+  void _setupHistoryStream() {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final userId = userProvider.userId;
+
+    if (userId != null) {
+      _historySubscription = ViewService.getUserHistoryStream(
+        userId,
+        limit: 15,
+      ).listen((history) async {
+        final songIds = <String>[];
+        for (final record in history) {
+          if (record.targetType == ViewTargetType.song &&
+              !songIds.contains(record.targetId)) {
+            songIds.add(record.targetId);
+          }
+        }
+
+        if (songIds.isNotEmpty) {
+          final songs = await FirestoreService.getSongsByIds(songIds);
+          if (mounted) {
+            setState(() {
+              _recentlyPlayed = songs;
+            });
+          }
+        } else if (mounted) {
+          setState(() => _recentlyPlayed = []);
+        }
+      });
+    }
   }
 
   Future<void> _loadData() async {
     try {
-      final songs = await FirestoreService.getSongs(limit: 20);
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final userId = userProvider.userId;
+
+      List<Song> recentlyPlayedSongs = [];
+
+      if (userId != null) {
+        // Lấy lịch sử nghe nhạc của người dùng
+        final history = await ViewService.getUserHistory(userId, limit: 15);
+        final songIds = <String>[];
+        for (final record in history) {
+          if (record.targetType == ViewTargetType.song &&
+              !songIds.contains(record.targetId)) {
+            songIds.add(record.targetId);
+          }
+        }
+        
+        if (songIds.isNotEmpty) {
+          recentlyPlayedSongs = await FirestoreService.getSongsByIds(songIds);
+        }
+      }
+
+      // Nếu không có lịch sử hoặc chưa đăng nhập, lấy bài hát mới nhất làm fallback
+      if (recentlyPlayedSongs.isEmpty) {
+        recentlyPlayedSongs = await FirestoreService.getSongs(limit: 8);
+      }
+
       final artists = await FirestoreService.getArtists(limit: 20);
       final albums = await FirestoreService.getAlbums(limit: 20);
 
       if (mounted) {
         setState(() {
-          _recentlyPlayed = songs.take(8).toList();
+          _recentlyPlayed = recentlyPlayedSongs;
           _artists = artists;
           _albums = albums;
           _isLoading = false;
@@ -75,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFFF7F9F8),
         surfaceTintColor: const Color(0xFFF7F9F8),
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: Text(
           _greeting(),
           style: const TextStyle(
@@ -121,14 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(left: 20, right: 20, top: 8, bottom: 140),
                 children: [
-                  _SectionTitle('Recently played', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả bài hát!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
+                  _SectionTitle('Recently played'),
                   const SizedBox(height: 14),
                   SizedBox(
                     height: 150,
@@ -144,7 +205,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 song: item,
                                 onTap: () {
                                   final audioProvider = context.read<AudioProvider>();
-                                  audioProvider.playPlaylist(_recentlyPlayed, startIndex: index);
+                                  final userProvider = context.read<UserProvider>();
+                                  audioProvider.playPlaylist(
+                                    _recentlyPlayed,
+                                    startIndex: index,
+                                    userId: userProvider.userId,
+                                  );
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -157,48 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                   ),
                   const SizedBox(height: 28),
-                  _SectionTitle('Popular artists', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả nghệ sĩ!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 130,
-                    child: _artists.isEmpty
-                        ? const Center(child: Text('Chưa có nghệ sĩ nào'))
-                        : ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _artists.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 16),
-                            itemBuilder: (context, index) {
-                              final artist = _artists[index];
-                              return _ArtistCircle(
-                                artist: artist,
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ArtistDetailScreen(artist: artist),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 28),
-                  _SectionTitle('Popular albums & EPs', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả albums!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
+                  _SectionTitle('Popular albums & EPs'),
                   const SizedBox(height: 14),
                   SizedBox(
                     height: 200,
@@ -224,6 +249,33 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                           ),
                   ),
+                  const SizedBox(height: 28),
+                  _SectionTitle('Popular artists'),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 130,
+                    child: _artists.isEmpty
+                        ? const Center(child: Text('Chưa có nghệ sĩ nào'))
+                        : ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _artists.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            itemBuilder: (context, index) {
+                              final artist = _artists[index];
+                              return _ArtistCircle(
+                                artist: artist,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ArtistDetailScreen(artist: artist),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             ),
@@ -232,10 +284,9 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title, {this.onSeeAll});
+  const _SectionTitle(this.title);
 
   final String title;
-  final VoidCallback? onSeeAll;
 
   @override
   Widget build(BuildContext context) {
@@ -248,19 +299,6 @@ class _SectionTitle extends StatelessWidget {
             fontSize: 18,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
-          ),
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: onSeeAll,
-          style: TextButton.styleFrom(
-            foregroundColor: _HomeScreenState._mintGreen,
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(0, 32),
-          ),
-          child: const Text(
-            'See all',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
           ),
         ),
       ],

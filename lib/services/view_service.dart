@@ -144,7 +144,8 @@ class ViewService {
         transaction.update(statsRef, {
           'totalViews': FieldValue.increment(1),
           'totalListenTime': FieldValue.increment(durationSeconds),
-          'lastViewedAt': DateTime.now(),
+          'lastViewedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
         transaction.set(statsRef, {
@@ -152,7 +153,8 @@ class ViewService {
           'targetId': targetId,
           'totalViews': 1,
           'totalListenTime': durationSeconds,
-          'lastViewedAt': DateTime.now(),
+          'lastViewedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
       }
     });
@@ -328,6 +330,35 @@ class ViewService {
     }
   }
 
+  // Get user's listening history as a stream
+  static Stream<List<ViewRecord>> getUserHistoryStream(
+    String userId, {
+    int limit = 50,
+  }) {
+    return _db
+        .collection('views')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) {
+      final records = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return ViewRecord(
+          id: doc.id,
+          targetType: ViewTargetType.values.firstWhere(
+            (e) => e.name == data['targetType'],
+            orElse: () => ViewTargetType.song,
+          ),
+          targetId: data['targetId'] ?? '',
+          userId: data['userId'],
+          viewedAt: data['viewedAt']?.toDate() ?? DateTime.now(),
+          durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
+        );
+      }).toList();
+      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+      return records.take(limit).toList();
+    });
+  }
+
   // Get user's listening history
   static Future<List<ViewRecord>> getUserHistory(
     String userId, {
@@ -337,11 +368,9 @@ class ViewService {
       final snapshot = await _db
           .collection('views')
           .where('userId', isEqualTo: userId)
-          .orderBy('viewedAt', descending: true)
-          .limit(limit)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final records = snapshot.docs.map((doc) {
         final data = doc.data()!;
         return ViewRecord(
           id: doc.id,
@@ -355,6 +384,8 @@ class ViewService {
           durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
         );
       }).toList();
+      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+      return records.take(limit).toList();
     } catch (e) {
       debugPrint('Error getting user history: $e');
       return [];

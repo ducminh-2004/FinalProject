@@ -238,7 +238,7 @@ class FirestoreService {
       final albums = <Album>[];
       for (final doc in snapshot.docs) {
         final songIds = List<String>.from(doc['songIds'] ?? []);
-        final songs = await _getSongsByIds(songIds);
+        final songs = await getSongsByIds(songIds);
         albums.add(Album(
           id: doc.id,
           title: doc['title'] ?? '',
@@ -260,7 +260,7 @@ class FirestoreService {
     if (!doc.exists) return null;
     
     final songIds = List<String>.from(doc['songIds'] ?? []);
-    final songs = await _getSongsByIds(songIds);
+    final songs = await getSongsByIds(songIds);
     
     return Album(
       id: doc['id'] ?? doc.id,
@@ -351,7 +351,7 @@ class FirestoreService {
   }
 
   // Helper
-  static Future<List<Song>> _getSongsByIds(List<String> ids) async {
+  static Future<List<Song>> getSongsByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     
     final songs = <Song>[];
@@ -421,7 +421,7 @@ class FirestoreService {
     if (!doc.exists) return [];
     
     final songIds = List<String>.from(doc['songIds'] ?? []);
-    return await _getSongsByIds(songIds);
+    return await getSongsByIds(songIds);
   }
 
   // Update playlist title

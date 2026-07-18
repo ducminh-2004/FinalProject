@@ -5,6 +5,8 @@ import '../models/song.dart';
 import '../providers/user_provider.dart';
 import '../providers/audio_provider.dart';
 import '../firebase/firestore_service.dart';
+import '../services/view_service.dart';
+import '../models/view_model.dart';
 import 'now_playing_screen.dart';
 import '../firebase/auth_service.dart';
 import 'login_screen.dart';
@@ -41,12 +43,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       final playlists = await FirestoreService.getUserPlaylists(userProvider.userId!);
-      final songs = await FirestoreService.getSongs(limit: 50);
+      final history = await ViewService.getUserHistory(
+        userProvider.userId!,
+        limit: 100,
+      );
+      final recentSongIds = <String>[];
+      for (final record in history) {
+        if (record.targetType == ViewTargetType.song &&
+            !recentSongIds.contains(record.targetId)) {
+          recentSongIds.add(record.targetId);
+        }
+        if (recentSongIds.length == 3) break;
+      }
+      final recentSongs = await FirestoreService.getSongsByIds(recentSongIds);
       
       setState(() {
         _playlists = playlists;
-        _recentSongs = songs.take(3).toList();
-        _songsPlayed = songs.length;
+        _recentSongs = recentSongs;
+        _songsPlayed = history
+            .where((record) => record.targetType == ViewTargetType.song)
+            .length;
         _isLoading = false;
       });
     } catch (e) {
