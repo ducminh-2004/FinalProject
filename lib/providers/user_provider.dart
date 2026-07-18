@@ -4,7 +4,7 @@ import '../models/artist.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/auth_service.dart';
 
-enum UserRole { user, admin }
+enum UserRole { user, artist, admin }
 
 class UserProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -18,6 +18,8 @@ class UserProvider extends ChangeNotifier {
   List<String> _likedSongIds = [];
   List<String> _followedArtistIds = [];
   bool _isLoading = false;
+  bool _isPendingArtist = false;
+  String? _artistId;
 
   String? get userId => _userId;
   String? get email => _email;
@@ -30,6 +32,9 @@ class UserProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _userId != null;
   bool get isAdmin => _role == UserRole.admin;
+  bool get isArtist => _role == UserRole.artist;
+  bool get isPendingArtist => _isPendingArtist;
+  String? get artistId => _artistId;
 
   dynamic get currentUser => _authService.currentUser;
 
@@ -57,6 +62,8 @@ class UserProvider extends ChangeNotifier {
         _subscriptionTier = 'Free';
         _likedSongIds = [];
         _followedArtistIds = [];
+        _isPendingArtist = false;
+        _artistId = null;
         notifyListeners();
       }
     });
@@ -64,16 +71,31 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _loadUserRole() async {
     if (_userId == null) return;
-    
+
     try {
-      final isAdmin = await FirestoreService.checkUserIsAdmin(_userId!);
-      _role = isAdmin ? UserRole.admin : UserRole.user;
+      final status = await FirestoreService.getUserRoleStatus(_userId!);
+      final roleStr = status['role'] as String? ?? 'user';
+      if (roleStr == 'admin' || status['isAdmin'] == true) {
+        _role = UserRole.admin;
+      } else if (roleStr == 'artist') {
+        _role = UserRole.artist;
+      } else {
+        _role = UserRole.user;
+      }
+      _isPendingArtist = status['isPendingArtist'] as bool? ?? false;
+      _artistId = status['artistId'] as String?;
     } catch (e) {
       debugPrint('Error loading user role: $e');
       _role = UserRole.user;
+      _isPendingArtist = false;
+      _artistId = null;
     }
-    
+
     notifyListeners();
+  }
+
+  Future<void> reloadRole() async {
+    await _loadUserRole();
   }
 
   Future<void> _loadSubscriptionTier() async {
@@ -239,6 +261,8 @@ class UserProvider extends ChangeNotifier {
     _role = UserRole.user;
     _likedSongIds = [];
     _followedArtistIds = [];
+    _isPendingArtist = false;
+    _artistId = null;
     _authService.signOut();
     notifyListeners();
   }

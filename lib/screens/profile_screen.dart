@@ -12,6 +12,8 @@ import 'liked_songs_screen.dart';
 import 'user_playlists_screen.dart';
 import 'edit_profile_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
+import 'artist_register_screen.dart';
+import 'artist_dashboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -504,6 +506,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'Trợ giúp',
             onTap: () {},
           ),
+          ..._buildArtistTiles(context),
           if (context.watch<UserProvider>().isAdmin) ...[
             Divider(height: 1, color: _darkText.withValues(alpha: 0.05)),
             _AccountTile(
@@ -529,6 +532,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  List<Widget> _buildArtistTiles(BuildContext context) {
+    final userProvider = context.watch<UserProvider>();
+    // Admin has their own panel; skip artist tiles for admins.
+    if (userProvider.isAdmin) return [];
+
+    final divider = Divider(height: 1, color: _darkText.withValues(alpha: 0.05));
+
+    if (userProvider.isArtist) {
+      return [
+        divider,
+        _AccountTile(
+          icon: Icons.mic_external_on_rounded,
+          title: 'Trang nghệ sĩ',
+          textColor: _mintGreen,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ArtistDashboardScreen()),
+            );
+          },
+        ),
+      ];
+    }
+
+    if (userProvider.isPendingArtist) {
+      return [
+        divider,
+        const _AccountTile(
+          icon: Icons.hourglass_top_rounded,
+          title: 'Đơn nghệ sĩ đang chờ duyệt',
+          textColor: Color(0xFFB8860B),
+          onTap: _noop,
+        ),
+      ];
+    }
+
+    return [
+      divider,
+      _AccountTile(
+        icon: Icons.star_outline_rounded,
+        title: 'Trở thành nghệ sĩ',
+        textColor: _mintGreen,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ArtistRegisterScreen()),
+          );
+        },
+      ),
+    ];
+  }
+
+  static void _noop() {}
 
   void _showSettingsBottomSheet(BuildContext context) {
     showModalBottomSheet(
