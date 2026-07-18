@@ -11,6 +11,8 @@ import 'screens/liked_songs_screen.dart';
 import 'screens/artist_detail_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/artist_register_screen.dart';
+import 'screens/artist_dashboard_screen.dart';
 import 'firebase/firebase_service.dart';
 import 'providers/audio_provider.dart';
 import 'providers/user_provider.dart';
@@ -44,6 +46,8 @@ class MyApp extends StatelessWidget {
           '/main': (_) => const MainScreen(),
           '/library': (_) => const LibraryScreen(),
           '/admin-dashboard': (_) => const AdminDashboardScreen(),
+          '/artist-register': (_) => const ArtistRegisterScreen(),
+          '/artist-dashboard': (_) => const ArtistDashboardScreen(),
           '/now-playing': (_) => const NowPlayingScreen(),
           '/liked-songs': (_) => const LikedSongsScreen(),
         },

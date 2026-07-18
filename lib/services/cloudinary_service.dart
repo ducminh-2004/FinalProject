@@ -22,7 +22,11 @@ class CloudinaryService {
       
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(responseString);
-        return jsonResponse['secure_url'];
+        final secureUrl = jsonResponse['secure_url'] as String?;
+        if (secureUrl == null) return null;
+        // Với file âm thanh/mp4: yêu cầu Cloudinary trả về .mp3 (chỉ lấy tiếng,
+        // bỏ hình ảnh của video). File nhạc thường cũng thành .mp3 chuẩn.
+        return isAudio ? _toAudioUrl(secureUrl) : secureUrl;
       } else {
         print("Cloudinary Error: $responseString");
         return null;
@@ -31,6 +35,15 @@ class CloudinaryService {
       print("Upload Exception: $e");
       return null;
     }
+  }
+
+  // Đổi đuôi URL Cloudinary sang .mp3 -> Cloudinary tự trích xuất audio
+  // (kể cả từ mp4), chỉ giữ âm thanh, bỏ hình ảnh.
+  static String _toAudioUrl(String url) {
+    final slash = url.lastIndexOf('/');
+    final dot = url.lastIndexOf('.');
+    if (dot > slash) return '${url.substring(0, dot)}.mp3';
+    return '$url.mp3';
   }
 
   // Giữ lại hàm cũ để tránh lỗi compile nếu chưa cập nhật hết

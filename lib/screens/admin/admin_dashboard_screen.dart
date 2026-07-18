@@ -12,6 +12,7 @@ import 'admin_artists_screen.dart';
 import 'admin_albums_screen.dart';
 import 'admin_genres_screen.dart';
 import 'admin_subscriptions_screen.dart';
+import 'admin_artist_requests_screen.dart';
 
 const _mintGreen = Color(0xFF0E6B5A);
 const _darkText = Color(0xFF0A1F1A);
@@ -27,6 +28,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, int> _stats = {};
   List<Map<String, dynamic>> _topSongs = [];
   List<DailyStats> _dailyStats = [];
+  int _pendingArtistRequests = 0;
   bool _isLoading = true;
 
   @override
@@ -42,11 +44,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         FirestoreService.getSystemStats(),
         ViewService.getTopSongs(limit: 5),
         ViewService.getDailyStats(days: 7),
+        FirestoreService.getPendingArtistRequestCount(),
       ]);
-      
+
       _stats = results[0] as Map<String, int>;
       _topSongs = results[1] as List<Map<String, dynamic>>;
       _dailyStats = results[2] as List<DailyStats>;
+      _pendingArtistRequests = results[3] as int;
     } catch (e) {
       debugPrint('Error loading stats: $e');
     }
@@ -368,6 +372,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         const SizedBox(height: 12),
         _ManagementCard(
+          icon: Icons.how_to_reg_rounded,
+          title: 'Đơn đăng ký nghệ sĩ',
+          subtitle: _pendingArtistRequests > 0
+              ? '$_pendingArtistRequests đơn đang chờ duyệt'
+              : 'Xét duyệt người dùng thành nghệ sĩ',
+          color: const Color(0xFFE13300),
+          onTap: () => _navigateTo(const AdminArtistRequestsScreen())
+              .then((_) => _loadData()),
+          fullWidth: true,
+          badgeCount: _pendingArtistRequests,
+        ),
+        const SizedBox(height: 12),
+        _ManagementCard(
           icon: Icons.category_rounded,
           title: 'Thể loại',
           subtitle: 'Quản lý danh sách thể loại',
@@ -388,8 +405,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _navigateTo(Widget screen) {
-    Navigator.push(
+  Future<void> _navigateTo(Widget screen) {
+    return Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => screen),
     );
@@ -458,6 +475,7 @@ class _ManagementCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final bool fullWidth;
+  final int badgeCount;
 
   const _ManagementCard({
     required this.icon,
@@ -466,6 +484,7 @@ class _ManagementCard extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.fullWidth = false,
+    this.badgeCount = 0,
   });
 
   @override
@@ -488,14 +507,41 @@ class _ManagementCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 20),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$badgeCount',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(

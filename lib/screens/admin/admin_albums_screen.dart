@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../services/cloudinary_service.dart';
 import '../../models/album.dart';
 import '../../firebase/firestore_service.dart';
+import '../album_creator_screen.dart';
 
 const _mintGreen = Color(0xFF0E6B5A);
 const _darkText = Color(0xFF0A1F1A);
@@ -74,10 +75,25 @@ class _AdminAlbumsScreenState extends State<AdminAlbumsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAlbumDialog(context),
-        backgroundColor: const Color(0xFF8D67AB),
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'albumBulk',
+            onPressed: _openAlbumCreator,
+            backgroundColor: const Color(0xFF8D67AB),
+            icon: const Icon(Icons.library_add_rounded, color: Colors.white),
+            label: const Text('Tạo album + nhạc', style: TextStyle(color: Colors.white)),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'albumSimple',
+            onPressed: () => _showAlbumDialog(context),
+            backgroundColor: const Color(0xFF8D67AB),
+            child: const Icon(Icons.add_rounded, color: Colors.white),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -159,6 +175,15 @@ class _AdminAlbumsScreenState extends State<AdminAlbumsScreen> {
         ],
       ),
     );
+  }
+
+  void _openAlbumCreator() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AlbumCreatorScreen()),
+    ).then((created) {
+      if (created == true) _loadAlbums();
+    });
   }
 
   void _showAlbumDialog(BuildContext context, {Album? album}) {
