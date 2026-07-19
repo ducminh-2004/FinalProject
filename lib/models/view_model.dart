@@ -40,7 +40,8 @@ class ViewRecord {
       'targetType': targetType.name,
       'targetId': targetId,
       'userId': userId,
-      'viewedAt': viewedAt,
+      'viewedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
       'durationSeconds': durationSeconds,
     };
   }

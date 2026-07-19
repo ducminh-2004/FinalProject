@@ -4,6 +4,9 @@ import '../models/playlist.dart';
 import '../models/artist.dart';
 import '../providers/user_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/view_service.dart';
+import '../models/view_model.dart';
+import '../firebase/firestore_service.dart';
 import 'liked_songs_screen.dart';
 import 'artist_detail_screen.dart';
 import 'now_playing_screen.dart';
@@ -21,6 +24,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<Artist> _followedArtists = [];
   bool _isLoadingArtists = true;
   List<String> _lastFollowedIds = [];
+  String _selectedFilter = 'Tất cả';
 
   static const _darkText = Color(0xFF0A1F1A);
   static const _mintGreen = Color(0xFF0E6B5A);
@@ -136,50 +140,184 @@ class _LibraryScreenState extends State<LibraryScreen> {
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             children: [
-              // Followed Artists section
-              _buildSectionHeader('Nghệ sĩ theo dõi'),
-              const SizedBox(height: 10),
-              _buildFollowedArtistsSection(followedIds),
+              // Filter Chips
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildFilterChip('Tất cả'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('Playlist'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('Nghệ sĩ'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('Album'),
+                  ],
+                ),
+              ),
               const SizedBox(height: 24),
 
               // Liked Songs
-              _buildSectionHeader('Bài hát đã thích'),
-              const SizedBox(height: 10),
-              _buildSectionItem(
-                context,
-                icon: Icons.favorite_rounded,
-                iconColor: _mintGreen,
-                title: 'Bài hát đã thích',
-                subtitle: '${likedSongIds.length} bài hát',
-                gradient: LinearGradient(
-                  colors: [_mintGreen, _darkText],
-                ),
-                onTap: () => Navigator.push(
+              if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Playlist') ...[
+                _buildSectionItem(
                   context,
-                  MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
+                  icon: Icons.favorite_rounded,
+                  iconColor: _mintGreen,
+                  title: 'Bài hát đã thích',
+                  subtitle: '${likedSongIds.length} bài hát',
+                  gradient: LinearGradient(
+                    colors: [_mintGreen, _darkText],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
+                  ),
+                  onPlayTap: () async {
+                    final songs = await userProvider.getLikedSongs();
+                    if (songs.isNotEmpty && mounted) {
+                      context.read<AudioProvider>().playPlaylist(songs, userId: userProvider.userId);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => NowPlayingScreen(initialSong: songs.first)),
+                      );
+                    }
+                  },
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
+              ],
+
+              // Followed Artists section
+              if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Nghệ sĩ') ...[
+                _buildSectionHeader('Nghệ sĩ theo dõi'),
+                const SizedBox(height: 10),
+                _buildFollowedArtistsSection(followedIds),
+                const SizedBox(height: 24),
+              ],
 
               // Playlists section header
-              _buildSectionHeader('Playlist của bạn'),
-              const SizedBox(height: 10),
+              if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Playlist') ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSectionHeader('Playlist của bạn'),
+                    IconButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const UserPlaylistsScreen()),
+                      ),
+                      icon: const Icon(Icons.add_rounded, color: _mintGreen),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
 
-              // Create Playlist button
-              _buildCreatePlaylistButton(context),
-              const SizedBox(height: 10),
+                // User's playlists display
+                StreamBuilder<List<Playlist>>(
+                  stream: FirestoreService.watchUserPlaylists(userProvider.userId!),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final playlists = snapshot.data ?? [];
+                    if (playlists.isEmpty) {
+                      return _buildCreatePlaylistButton(context);
+                    }
+                    return Column(
+                      children: [
+                        ...playlists.map((playlist) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildPlaylistItem(
+                            context,
+                            title: playlist.title,
+                            subtitle: '${playlist.songIds.length} bài hát',
+                            icon: Icons.queue_music_rounded,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PlaylistDetailScreen(playlist: playlist),
+                              ),
+                            ),
+                          ),
+                        )),
+                        _buildCreatePlaylistButton(context),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
 
-              // User's playlists
-              _buildPlaylistItem(
-                context,
-                title: 'Tạo playlist đầu tiên của bạn',
-                subtitle: 'Dễ dàng tạo playlist để sắp xếp nhạc yêu thích',
-                icon: Icons.library_music_outlined,
-              ),
-              const SizedBox(height: 100),
+              // Recent History (Professional addition)
+              if (_selectedFilter == 'Tất cả') ...[
+                _buildSectionHeader('Nghe gần đây'),
+                const SizedBox(height: 10),
+                _buildRecentHistoryItem(context),
+                const SizedBox(height: 100),
+              ],
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildRecentHistoryItem(BuildContext context) {
+    final userProvider = context.read<UserProvider>();
+    return _buildSectionItem(
+      context,
+      icon: Icons.history_rounded,
+      iconColor: Colors.blue,
+      title: 'Lịch sử nghe nhạc',
+      subtitle: 'Xem lại các bài hát bạn đã nghe',
+      gradient: const LinearGradient(
+        colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+      ),
+      onTap: () {
+      },
+      onPlayTap: () async {
+        final history = await ViewService.getUserHistory(userProvider.userId!, limit: 20);
+        final songIds = history
+            .where((r) => r.targetType == ViewTargetType.song)
+            .map((r) => r.targetId)
+            .toSet()
+            .toList();
+
+        if (songIds.isNotEmpty) {
+          final songs = await FirestoreService.getSongsByIds(songIds);
+          if (songs.isNotEmpty && mounted) {
+            context.read<AudioProvider>().playPlaylist(songs, userId: userProvider.userId);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => NowPlayingScreen(initialSong: songs.first)),
+            );
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildFilterChip(String label) {
+    final isSelected = _selectedFilter == label;
+    return InkWell(
+      onTap: () => setState(() => _selectedFilter = label),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _mintGreen : _surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? _mintGreen : _darkText.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : _darkText,
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
@@ -359,6 +497,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     required String subtitle,
     required Gradient gradient,
     required VoidCallback onTap,
+    VoidCallback? onPlayTap,
   }) {
     return InkWell(
       onTap: onTap,
@@ -423,7 +562,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
             IconButton(
-              onPressed: onTap,
+              onPressed: onPlayTap ?? onTap,
               icon: Icon(Icons.play_circle_filled_rounded, color: _mintGreen, size: 40),
             ),
           ],
@@ -497,9 +636,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
     required String title,
     required String subtitle,
     required IconData icon,
+    VoidCallback? onTap,
   }) {
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         height: 72,
@@ -560,6 +700,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Icon(
+                Icons.play_circle_fill_rounded,
+                color: _mintGreen.withValues(alpha: 0.8),
+                size: 32,
               ),
             ),
           ],

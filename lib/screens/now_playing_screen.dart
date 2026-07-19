@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../models/song.dart';
+import '../firebase/firestore_service.dart';
+import 'user_playlists_screen.dart';
 
 class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key, this.initialSong});
@@ -59,6 +61,13 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       builder: (context, audio, child) {
         final currentSong = audio.currentSong ?? widget.initialSong ?? demoCurrentSong;
 
+        // Control animation based on playing state
+        if (audio.isPlaying) {
+          if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+        } else {
+          if (_pulseController.isAnimating) _pulseController.stop();
+        }
+
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle.dark.copyWith(
             statusBarColor: Colors.transparent,
@@ -69,7 +78,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             body: SafeArea(
               child: Column(
                 children: [
-                  _buildAppBar(darkText),
+                  _buildAppBar(darkText, currentSong),
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -97,7 +106,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
     );
   }
 
-  Widget _buildAppBar(Color darkText) {
+  Widget _buildAppBar(Color darkText, Song currentSong) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -127,9 +136,173 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             ],
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: () => _showSongOptions(context, currentSong),
             icon: Icon(Icons.more_horiz_rounded, color: darkText.withOpacity(0.7)),
           ),
+        ],
+      ),
+    );
+  }
+
+  void _showSongOptions(BuildContext pageContext, Song song) {
+    final userProvider = pageContext.read<UserProvider>();
+
+    showModalBottomSheet(
+      context: pageContext,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.playlist_add_rounded),
+              title: const Text('Thêm vào danh sách phát'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                if (!userProvider.isLoggedIn) {
+                  ScaffoldMessenger.of(pageContext).showSnackBar(
+                    const SnackBar(content: Text('Vui lòng đăng nhập để thực hiện')),
+                  );
+                  return;
+                }
+                _showPlaylistPicker(pageContext, song.id);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_rounded),
+              title: const Text('Chia sẻ bài hát'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                final text = 'Đang nghe "${song.title}" của ${song.artist} trên Music App!';
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(pageContext).showSnackBar(
+                  const SnackBar(content: Text('Đã sao chép liên kết chia sẻ!')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: const Text('Xem thông tin bài hát'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showSongInfo(pageContext, song);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPlaylistPicker(BuildContext pageContext, String songId) {
+    final userProvider = pageContext.read<UserProvider>();
+    showModalBottomSheet(
+      context: pageContext,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => FutureBuilder(
+        future: FirestoreService.getUserPlaylists(userProvider.userId!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+          }
+          final playlists = snapshot.data ?? [];
+          if (playlists.isEmpty) {
+            return const SizedBox(height: 100, child: Center(child: Text('Bạn chưa có danh sách phát nào')));
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Chọn danh sách phát', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: playlists.length,
+                  itemBuilder: (context, index) {
+                    final playlist = playlists[index];
+                    return ListTile(
+                      leading: const Icon(Icons.playlist_play_rounded),
+                      title: Text(playlist.title),
+                      onTap: () async {
+                        try {
+                          await FirestoreService.addSongToPlaylist(playlist.id, songId);
+                          if (context.mounted) {
+                            Navigator.pop(sheetContext);
+                            // Xóa SnackBar cũ nếu đang hiển thị
+                            ScaffoldMessenger.of(pageContext).removeCurrentSnackBar();
+
+                            ScaffoldMessenger.of(pageContext).showSnackBar(
+                              SnackBar(
+                                content: const Text('Đã thêm vào danh sách phát'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(milliseconds: 2500),
+                                backgroundColor: const Color(0xFF323232),
+                                action: SnackBarAction(
+                                  label: 'XEM NGAY',
+                                  textColor: Colors.white, // Đổi sang màu trắng cho nổi bật
+                                  onPressed: () {
+                                    Navigator.push(
+                                      pageContext,
+                                      MaterialPageRoute(
+                                        builder: (_) => PlaylistDetailScreen(playlist: playlist),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (pageContext.mounted) {
+                            ScaffoldMessenger.of(pageContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('Lỗi khi thêm vào danh sách phát'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSongInfo(BuildContext context, Song song) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Thông tin bài hát'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tiêu đề: ${song.title}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Nghệ sĩ: ${song.artist}'),
+            if (song.genres.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Thể loại: ${song.genres.join(', ')}'),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Đóng')),
         ],
       ),
     );
