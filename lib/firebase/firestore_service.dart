@@ -365,24 +365,16 @@ class FirestoreService {
 
   // Add song to playlist
   static Future<void> addSongToPlaylist(String playlistId, String songId) async {
-    final playlistRef = _db.collection('playlists').doc(playlistId);
-    final doc = await playlistRef.get();
-    final songIds = List<String>.from(doc['songIds'] ?? []);
-    
-    if (!songIds.contains(songId)) {
-      songIds.add(songId);
-      await playlistRef.update({'songIds': songIds});
-    }
+    await _db.collection('playlists').doc(playlistId).update({
+      'songIds': FieldValue.arrayUnion([songId]),
+    });
   }
 
   // Remove song from playlist
   static Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
-    final playlistRef = _db.collection('playlists').doc(playlistId);
-    final doc = await playlistRef.get();
-    final songIds = List<String>.from(doc['songIds'] ?? []);
-    
-    songIds.remove(songId);
-    await playlistRef.update({'songIds': songIds});
+    await _db.collection('playlists').doc(playlistId).update({
+      'songIds': FieldValue.arrayRemove([songId]),
+    });
   }
 
   // Create new playlist
@@ -413,6 +405,16 @@ class FirestoreService {
       debugPrint('Error getting user playlists: $e');
       return [];
     }
+  }
+
+  // Keep playlist metadata (including song counts) in sync with Firestore.
+  static Stream<List<Playlist>> watchUserPlaylists(String userId) {
+    return _db
+        .collection('playlists')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Playlist.fromFirestore(doc)).toList());
   }
 
   // Get songs from playlist
