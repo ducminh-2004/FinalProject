@@ -53,6 +53,7 @@ dependencies:
   provider: ^6.1.0
   fl_chart: ^0.71.0
   shared_preferences: ^2.3.0
+  email_otp: ^3.2.0
 
 dev_dependencies:
   flutter_test:
