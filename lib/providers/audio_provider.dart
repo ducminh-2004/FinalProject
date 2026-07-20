@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/song.dart';
 import '../extensions/view_extensions.dart';
 
@@ -89,7 +90,7 @@ class AudioProvider extends ChangeNotifier {
   }
 
   // Play a single song
-  Future<void> playSong(Song song, {bool restart = false}) async {
+  Future<void> playSong(Song song, {bool restart = false, String? userId}) async {
     if (song.audioUrl == null || song.audioUrl!.isEmpty) return;
 
     // Nếu là bài hiện tại và đang phát, không restart
@@ -103,7 +104,13 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
 
     // Track song view
-    song.id.trackSongView(durationSeconds: 0);
+    // Always associate the history entry with the signed-in user. Most callers
+    // do not have to (and previously did not) pass a userId explicitly.
+    final effectiveUserId = userId ?? FirebaseAuth.instance.currentUser?.uid;
+    song.id.trackSongView(
+      userId: effectiveUserId,
+      durationSeconds: 0,
+    );
 
     if (!restart) {
       // Check if song is already in playlist
@@ -118,7 +125,7 @@ class AudioProvider extends ChangeNotifier {
   }
 
   // Play a playlist from specific index
-  Future<void> playPlaylist(List<Song> songs, {int startIndex = 0}) async {
+  Future<void> playPlaylist(List<Song> songs, {int startIndex = 0, String? userId}) async {
     if (songs.isEmpty) return;
 
     _playlist = _isShuffle ? (List.from(songs)..shuffle()) : List.from(songs);
@@ -131,7 +138,7 @@ class AudioProvider extends ChangeNotifier {
       _currentIndex = 0;
     }
 
-    await playSong(_playlist[_currentIndex]);
+    await playSong(_playlist[_currentIndex], userId: userId);
   }
 
   // Resume/Pause

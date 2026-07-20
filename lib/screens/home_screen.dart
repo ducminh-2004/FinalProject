@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
@@ -5,6 +6,8 @@ import '../models/album.dart';
 import '../models/artist.dart';
 import '../models/release.dart';
 import '../firebase/firestore_service.dart';
+import '../models/view_model.dart';
+import '../services/view_service.dart';
 import '../providers/audio_provider.dart';
 import 'now_playing_screen.dart';
 import 'album_detail_screen.dart';
@@ -22,9 +25,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<Song> _recentlyPlayed = [];
+  List<Song> _popularSongs = [];
   List<Artist> _artists = [];
   List<Album> _albums = [];
   bool _isLoading = true;
+  StreamSubscription<List<ViewRecord>>? _historySubscription;
+  String? _historyUserId;
 
   @override
   void initState() {
@@ -32,15 +38,111 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final userId = Provider.of<UserProvider>(context).userId;
+    if (_historyUserId != userId) {
+      _setupHistoryStream(userId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _historySubscription?.cancel();
+    super.dispose();
+  }
+
+  void _setupHistoryStream(String? userId) {
+    _historySubscription?.cancel();
+    _historySubscription = null;
+    _historyUserId = userId;
+
+    if (userId != null) {
+      _historySubscription = ViewService.getUserHistoryStream(
+        userId,
+        limit: 15,
+      ).listen((history) async {
+        if (_historyUserId != userId) return;
+        final songIds = <String>[];
+        for (final record in history) {
+          if (record.targetType == ViewTargetType.song &&
+              !songIds.contains(record.targetId)) {
+            songIds.add(record.targetId);
+          }
+        }
+
+        if (songIds.isNotEmpty) {
+          final songs = await FirestoreService.getSongsByIds(songIds);
+          if (mounted && _historyUserId == userId) {
+            setState(() {
+              _recentlyPlayed = songs;
+            });
+          }
+        } else if (mounted && _historyUserId == userId) {
+          setState(() => _recentlyPlayed = []);
+        }
+      });
+    } else {
+      _loadRecentlyPlayedFallback();
+    }
+  }
+
+  Future<void> _loadRecentlyPlayedFallback() async {
+    final songs = await FirestoreService.getSongs(limit: 8);
+    if (mounted && _historyUserId == null) {
+      setState(() => _recentlyPlayed = songs);
+    }
+  }
+
   Future<void> _loadData() async {
     try {
-      final songs = await FirestoreService.getSongs(limit: 20);
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final userId = userProvider.userId;
+
+      List<Song> recentlyPlayedSongs = [];
+
+      if (userId != null) {
+        // Lấy lịch sử nghe nhạc của người dùng
+        final history = await ViewService.getUserHistory(userId, limit: 15);
+        final songIds = <String>[];
+        for (final record in history) {
+          if (record.targetType == ViewTargetType.song &&
+              !songIds.contains(record.targetId)) {
+            songIds.add(record.targetId);
+          }
+        }
+        
+        if (songIds.isNotEmpty) {
+          recentlyPlayedSongs = await FirestoreService.getSongsByIds(songIds);
+        }
+      }
+
+      // Nếu không có lịch sử hoặc chưa đăng nhập, lấy bài hát mới nhất làm fallback
+      if (recentlyPlayedSongs.isEmpty) {
+        recentlyPlayedSongs = await FirestoreService.getSongs(limit: 8);
+      }
+
       final artists = await FirestoreService.getArtists(limit: 20);
       final albums = await FirestoreService.getAlbums(limit: 20);
 
+      // Lấy danh sách bài hát phổ biến
+      final topSongsData = await ViewService.getTopSongs(limit: 10);
+      final topSongIds = topSongsData.map((s) => s['id'] as String).toList();
+      List<Song> popularSongs = [];
+      if (topSongIds.isNotEmpty) {
+        popularSongs = await FirestoreService.getSongsByIds(topSongIds);
+      } else {
+        popularSongs = await FirestoreService.getSongs(limit: 10);
+      }
+
       if (mounted) {
         setState(() {
-          _recentlyPlayed = songs.take(8).toList();
+          // A live user-history stream owns this state when signed in.
+          if (_historySubscription == null) {
+            _recentlyPlayed = recentlyPlayedSongs;
+          }
+          _popularSongs = popularSongs;
           _artists = artists;
           _albums = albums;
           _isLoading = false;
@@ -75,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFFF7F9F8),
         surfaceTintColor: const Color(0xFFF7F9F8),
         elevation: 0,
+        automaticallyImplyLeading: false,
         title: Text(
           _greeting(),
           style: const TextStyle(
@@ -126,14 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(left: 20, right: 20, top: 8, bottom: 140),
                 children: [
-                  _SectionTitle('Recently played', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả bài hát!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
+                  _SectionTitle('Recently played', onSeeAll: () {}),
                   const SizedBox(height: 14),
                   SizedBox(
                     height: 150,
@@ -149,7 +245,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 song: item,
                                 onTap: () {
                                   final audioProvider = context.read<AudioProvider>();
-                                  audioProvider.playPlaylist(_recentlyPlayed, startIndex: index);
+                                  final userProvider = context.read<UserProvider>();
+                                  audioProvider.playPlaylist(
+                                    _recentlyPlayed,
+                                    startIndex: index,
+                                    userId: userProvider.userId,
+                                  );
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -162,32 +263,32 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                   ),
                   const SizedBox(height: 28),
-                  _SectionTitle('Popular artists', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả nghệ sĩ!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
+                  _SectionTitle('Popular songs', onSeeAll: () {}),
                   const SizedBox(height: 14),
                   SizedBox(
-                    height: 130,
-                    child: _artists.isEmpty
-                        ? const Center(child: Text('Chưa có nghệ sĩ nào'))
+                    height: 150,
+                    child: _popularSongs.isEmpty
+                        ? const Center(child: Text('Chưa có bài hát nào'))
                         : ListView.separated(
                             scrollDirection: Axis.horizontal,
-                            itemCount: _artists.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            itemCount: _popularSongs.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
                             itemBuilder: (context, index) {
-                              final artist = _artists[index];
-                              return _ArtistCircle(
-                                artist: artist,
+                              final item = _popularSongs[index];
+                              return _SongCard(
+                                song: item,
                                 onTap: () {
+                                  final audioProvider = context.read<AudioProvider>();
+                                  final userProvider = context.read<UserProvider>();
+                                  audioProvider.playPlaylist(
+                                    _popularSongs,
+                                    startIndex: index,
+                                    userId: userProvider.userId,
+                                  );
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => ArtistDetailScreen(artist: artist),
+                                      builder: (_) => NowPlayingScreen(initialSong: item),
                                     ),
                                   );
                                 },
@@ -196,14 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                   ),
                   const SizedBox(height: 28),
-                  _SectionTitle('Popular albums & EPs', onSeeAll: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Xem tất cả albums!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }),
+                  _SectionTitle('Popular albums & EPs', onSeeAll: () {}),
                   const SizedBox(height: 14),
                   SizedBox(
                     height: 200,
@@ -222,6 +316,33 @@ class _HomeScreenState extends State<HomeScreen> {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => AlbumDetailScreen(album: item),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 28),
+                  _SectionTitle('Popular artists', onSeeAll: () {}),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 130,
+                    child: _artists.isEmpty
+                        ? const Center(child: Text('Chưa có nghệ sĩ nào'))
+                        : ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _artists.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            itemBuilder: (context, index) {
+                              final artist = _artists[index];
+                              return _ArtistCircle(
+                                artist: artist,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ArtistDetailScreen(artist: artist),
                                     ),
                                   );
                                 },
@@ -256,18 +377,19 @@ class _SectionTitle extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        TextButton(
-          onPressed: onSeeAll,
-          style: TextButton.styleFrom(
-            foregroundColor: _HomeScreenState._mintGreen,
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(0, 32),
+        if (onSeeAll != null)
+          TextButton(
+            onPressed: onSeeAll,
+            style: TextButton.styleFrom(
+              foregroundColor: _HomeScreenState._mintGreen,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 32),
+            ),
+            child: const Text(
+              'See all',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
           ),
-          child: const Text(
-            'See all',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-        ),
       ],
     );
   }
