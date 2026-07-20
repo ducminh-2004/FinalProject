@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/song.dart';
 import '../extensions/view_extensions.dart';
 import '../firebase/firestore_service.dart';
 
-enum PlayerState { stopped, playing, paused, completed }
+enum AppPlayerState { stopped, playing, paused, completed }
 
 class AudioProvider extends ChangeNotifier {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
 
   // Current playback state
   Song? _currentSong;
@@ -20,7 +20,7 @@ class AudioProvider extends ChangeNotifier {
   bool _isRepeat = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  PlayerState _playerState = PlayerState.stopped;
+  AppPlayerState _playerState = AppPlayerState.stopped;
 
   // Fallback timer — polls position when onPositionChanged stream misses ticks
   Timer? _positionTimer;
@@ -42,7 +42,7 @@ class AudioProvider extends ChangeNotifier {
   bool get isRepeat => _isRepeat;
   Duration get position => _position;
   Duration get duration => _duration;
-  PlayerState get playerState => _playerState;
+  AppPlayerState get playerState => _playerState;
   bool get hasSong => _currentSong != null;
   bool get hasSleepTimer => _sleepTimer != null;
   Duration? get sleepRemaining => _sleepRemaining;
@@ -68,24 +68,24 @@ class AudioProvider extends ChangeNotifier {
     // Player state listener
     _audioPlayer.onPlayerStateChanged.listen((state) {
       switch (state) {
-        case PlayerState.playing:
+        case ap.PlayerState.playing:
           _isPlaying = true;
-          _playerState = PlayerState.playing;
+          _playerState = AppPlayerState.playing;
           _startPositionTimer();
           break;
-        case PlayerState.paused:
+        case ap.PlayerState.paused:
           _isPlaying = false;
-          _playerState = PlayerState.paused;
+          _playerState = AppPlayerState.paused;
           _stopPositionTimer();
           break;
-        case PlayerState.stopped:
+        case ap.PlayerState.stopped:
           _isPlaying = false;
-          _playerState = PlayerState.stopped;
+          _playerState = AppPlayerState.stopped;
           _stopPositionTimer();
           break;
-        case PlayerState.completed:
+        case ap.PlayerState.completed:
           _isPlaying = false;
-          _playerState = PlayerState.completed;
+          _playerState = AppPlayerState.completed;
           _stopPositionTimer();
           _onSongComplete();
           break;
