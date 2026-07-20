@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../models/artist.dart';
+import '../models/album.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/auth_service.dart';
 
@@ -16,6 +17,7 @@ class UserProvider extends ChangeNotifier {
   UserRole _role = UserRole.user;
   String _subscriptionTier = 'Free';
   List<String> _likedSongIds = [];
+  List<String> _likedAlbumIds = [];
   List<String> _followedArtistIds = [];
   bool _isLoading = false;
   bool _isPendingArtist = false;
@@ -28,6 +30,7 @@ class UserProvider extends ChangeNotifier {
   UserRole get role => _role;
   String get subscriptionTier => _subscriptionTier;
   List<String> get likedSongIds => _likedSongIds;
+  List<String> get likedAlbumIds => _likedAlbumIds;
   List<String> get followedArtistIds => _followedArtistIds;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _userId != null;
@@ -52,6 +55,7 @@ class UserProvider extends ChangeNotifier {
         await _loadUserRole();
         await _loadSubscriptionTier();
         _loadLikedSongs();
+        _loadLikedAlbums();
         _loadFollowedArtists();
       } else {
         _userId = null;
@@ -61,6 +65,7 @@ class UserProvider extends ChangeNotifier {
         _role = UserRole.user;
         _subscriptionTier = 'Free';
         _likedSongIds = [];
+        _likedAlbumIds = [];
         _followedArtistIds = [];
         _isPendingArtist = false;
         _artistId = null;
@@ -141,6 +146,16 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _loadLikedAlbums() async {
+    if (_userId == null) return;
+    try {
+      _likedAlbumIds = await FirestoreService.getLikedAlbumIds(_userId!);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading liked albums: $e');
+    }
+  }
+
   Future<void> _loadFollowedArtists() async {
     if (_userId == null) return;
     
@@ -154,6 +169,10 @@ class UserProvider extends ChangeNotifier {
 
   bool isSongLiked(String songId) {
     return _likedSongIds.contains(songId);
+  }
+
+  bool isAlbumLiked(String albumId) {
+    return _likedAlbumIds.contains(albumId);
   }
 
   bool isArtistFollowed(String artistId) {
@@ -178,6 +197,21 @@ class UserProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error toggling like: $e');
+    }
+  }
+
+  Future<void> toggleLikeAlbum(String albumId) async {
+    if (_userId == null) return;
+    try {
+      await FirestoreService.toggleLikeAlbum(_userId!, albumId);
+      if (_likedAlbumIds.contains(albumId)) {
+        _likedAlbumIds.remove(albumId);
+      } else {
+        _likedAlbumIds.add(albumId);
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error toggling album like: $e');
     }
   }
 
@@ -211,6 +245,16 @@ class UserProvider extends ChangeNotifier {
       if (song != null) songs.add(song);
     }
     return songs;
+  }
+
+  Future<List<Album>> getLikedAlbums() async {
+    if (_userId == null) return [];
+    final albums = <Album>[];
+    for (final albumId in _likedAlbumIds) {
+      final album = await FirestoreService.getAlbumById(albumId);
+      if (album != null) albums.add(album);
+    }
+    return albums;
   }
 
   Future<List<Artist>> getFollowedArtists() async {
@@ -265,6 +309,7 @@ class UserProvider extends ChangeNotifier {
     _photoUrl = null;
     _role = UserRole.user;
     _likedSongIds = [];
+    _likedAlbumIds = [];
     _followedArtistIds = [];
     _isPendingArtist = false;
     _artistId = null;

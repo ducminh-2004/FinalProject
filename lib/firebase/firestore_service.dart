@@ -142,6 +142,34 @@ class FirestoreService {
     }
   }
 
+  // Liked Albums
+  static Future<List<String>> getLikedAlbumIds(String userId) async {
+    try {
+      final snapshot = await _db.collection('liked_albums')
+          .where('userId', isEqualTo: userId)
+          .get();
+      return snapshot.docs.map((doc) => doc['albumId'] as String).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<void> toggleLikeAlbum(String userId, String albumId) async {
+    final docId = '${userId}_$albumId';
+    final docRef = _db.collection('liked_albums').doc(docId);
+    final doc = await docRef.get();
+    
+    if (doc.exists) {
+      await docRef.delete();
+    } else {
+      await docRef.set({
+        'userId': userId,
+        'albumId': albumId,
+        'likedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   // ==================== FOLLOW ARTISTS ====================
 
   // Get user's followed artist IDs

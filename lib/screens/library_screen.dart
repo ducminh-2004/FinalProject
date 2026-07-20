@@ -7,6 +7,8 @@ import '../providers/audio_provider.dart';
 import '../services/view_service.dart';
 import '../models/view_model.dart';
 import '../firebase/firestore_service.dart';
+import '../models/album.dart';
+import 'album_detail_screen.dart';
 import 'liked_songs_screen.dart';
 import 'artist_detail_screen.dart';
 import 'now_playing_screen.dart';
@@ -194,6 +196,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 const SizedBox(height: 24),
               ],
 
+              // Liked Albums section
+              if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Album') ...[
+                _buildSectionHeader('Album yêu thích'),
+                const SizedBox(height: 10),
+                _buildLikedAlbumsSection(userProvider),
+                const SizedBox(height: 24),
+              ],
+
               // Playlists section header
               if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Playlist') ...[
                 Row(
@@ -332,6 +342,162 @@ class _LibraryScreenState extends State<LibraryScreen> {
           fontSize: 18,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLikedAlbumsSection(UserProvider userProvider) {
+    return FutureBuilder<List<Album>>(
+      future: userProvider.getLikedAlbums(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final albums = snapshot.data ?? [];
+        if (albums.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _mintGreen.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.album_outlined, color: _mintGreen),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Chưa thích album nào',
+                        style: TextStyle(
+                          color: _darkText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Thả tim album để xem ở đây',
+                        style: TextStyle(
+                          color: _darkText.withValues(alpha: 0.6),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return SizedBox(
+          height: 180,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: albums.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              final album = albums[index];
+              return _buildAlbumCard(context, album);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAlbumCard(BuildContext context, Album album) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AlbumDetailScreen(album: album),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 130,
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: context.textPrimary.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 110,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                color: _surface,
+              ),
+              child: album.coverUrl != null && album.coverUrl!.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      child: Image.network(
+                        album.coverUrl!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.album_rounded,
+                          color: _mintGreen.withValues(alpha: 0.6),
+                          size: 40,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      Icons.album_rounded,
+                      color: _mintGreen.withValues(alpha: 0.6),
+                      size: 40,
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    album.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    album.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _darkText.withValues(alpha: 0.5),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -61,29 +61,47 @@ class _HomeScreenState extends State<HomeScreen> {
     _historyUserId = userId;
 
     if (userId != null) {
+      debugPrint('DEBUG: Setting up history stream for user: $userId');
       _historySubscription = ViewService.getUserHistoryStream(
         userId,
-        limit: 15,
+        limit: 30, // Tăng lên để đảm bảo lọc đủ bài hát duy nhất
       ).listen((history) async {
+        debugPrint('DEBUG: Received history update, records: ${history.length}');
         if (_historyUserId != userId) return;
+        
         final songIds = <String>[];
         for (final record in history) {
           if (record.targetType == ViewTargetType.song &&
               !songIds.contains(record.targetId)) {
             songIds.add(record.targetId);
           }
+          if (songIds.length >= 8) break; // Chỉ lấy tối đa 8 bài
         }
 
         if (songIds.isNotEmpty) {
           final songs = await FirestoreService.getSongsByIds(songIds);
+          // Sắp xếp lại theo đúng thứ tự lịch sử
+          final orderedSongs = <Song>[];
+          for (var id in songIds) {
+            final song = songs.where((s) => s.id == id).firstOrNull;
+            if (song != null) orderedSongs.add(song);
+          }
+
           if (mounted && _historyUserId == userId) {
             setState(() {
-              _recentlyPlayed = songs;
+              _recentlyPlayed = orderedSongs;
             });
           }
         } else if (mounted && _historyUserId == userId) {
-          setState(() => _recentlyPlayed = []);
+          // Nếu lịch sử trống, hiển thị 8 bài hát mặc định thay vì để trống
+          final fallbackSongs = await FirestoreService.getSongs(limit: 8);
+          if (mounted && _historyUserId == userId) {
+            setState(() => _recentlyPlayed = fallbackSongs);
+          }
         }
+      }, onError: (error) {
+        debugPrint('ERROR in history stream: $error');
+        // Nếu thấy lỗi này trong console, hãy click vào link nó cung cấp để tạo Index
       });
     } else {
       _loadRecentlyPlayedFallback();
@@ -125,18 +143,49 @@ class _HomeScreenState extends State<HomeScreen> {
         recentlyPlayedSongs = await FirestoreService.getSongs(limit: 8);
       }
 
-      final artists = await FirestoreService.getArtists(limit: 20);
-      final albums = await FirestoreService.getAlbums(limit: 20);
-
-      // Lấy danh sách bài hát phổ biến
-      final topSongsData = await ViewService.getTopSongs(limit: 10);
+      // Lấy danh sách bài hát phổ biến và lọc trùng theo tên
+      final topSongsData = await ViewService.getTopSongs(limit: 30); // Lấy nhiều hơn để lọc
       final topSongIds = topSongsData.map((s) => s['id'] as String).toList();
       List<Song> popularSongs = [];
       if (topSongIds.isNotEmpty) {
-        popularSongs = await FirestoreService.getSongsByIds(topSongIds);
+        final songs = await FirestoreService.getSongsByIds(topSongIds);
+        
+        // Logic lọc trùng theo Tiêu đề + Nghệ sĩ
+        final Map<String, Song> uniquePopular = {};
+        for (var song in songs) {
+          final key = '${song.title.toLowerCase()}_${song.artist.toLowerCase()}';
+          if (!uniquePopular.containsKey(key)) {
+            uniquePopular[key] = song;
+          }
+        }
+        popularSongs = uniquePopular.values.take(10).toList();
       } else {
         popularSongs = await FirestoreService.getSongs(limit: 10);
       }
+
+      final artists = await FirestoreService.getArtists(limit: 20);
+      
+      // Lấy và sắp xếp Album theo tổng lượt view của các bài hát trong album
+      final rawAlbums = await FirestoreService.getAlbums(limit: 50);
+      final List<Map<String, dynamic>> albumsWithViews = [];
+      
+      for (var album in rawAlbums) {
+        int totalAlbumViews = 0;
+        if (album.songs != null) {
+          for (var song in album.songs!) {
+            final stats = await ViewService.getViewStats(ViewTargetType.song, song.id);
+            totalAlbumViews += stats.totalViews;
+          }
+        }
+        albumsWithViews.add({
+          'album': album,
+          'views': totalAlbumViews,
+        });
+      }
+      
+      // Sắp xếp Album: lượt view cao nhất lên đầu
+      albumsWithViews.sort((a, b) => (b['views'] as int).compareTo(a['views'] as int));
+      final List<Album> sortedAlbums = albumsWithViews.map((e) => e['album'] as Album).take(10).toList();
 
       // New Releases from followed artists
       List<Song> newReleases = [];
@@ -160,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           _popularSongs = popularSongs;
           _artists = artists;
-          _albums = albums;
+          _albums = sortedAlbums;
           _newReleases = newReleases;
           _isLoading = false;
         });

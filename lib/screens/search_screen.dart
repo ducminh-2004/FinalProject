@@ -5,6 +5,7 @@ import '../models/song.dart';
 import '../models/artist.dart';
 import '../providers/audio_provider.dart';
 import '../firebase/firestore_service.dart';
+import '../widgets/song_options_bottom_sheet.dart';
 import 'artist_detail_screen.dart';
 import 'genre_playlist_screen.dart';
 import 'now_playing_screen.dart';
@@ -488,6 +489,12 @@ class _SongResultTile extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            IconButton(
+              icon: Icon(Icons.more_vert_rounded, color: darkText.withValues(alpha: 0.5)),
+              onPressed: () {
+                SongOptionsBottomSheet.show(context, song);
+              },
             ),
             IconButton(
               icon: Icon(Icons.play_circle_filled_rounded, color: mintGreen, size: 40),

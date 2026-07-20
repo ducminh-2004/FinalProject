@@ -9,6 +9,7 @@ import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../extensions/view_extensions.dart';
 import '../firebase/firestore_service.dart';
+import '../widgets/song_options_bottom_sheet.dart';
 import 'now_playing_screen.dart';
 import 'album_detail_screen.dart';
 
@@ -477,12 +478,7 @@ class _ArtistSongTile extends StatelessWidget {
             // More button
             IconButton(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Tùy chọn sắp có!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                SongOptionsBottomSheet.show(context, song);
               },
               icon: Icon(Icons.more_vert_rounded, color: darkText.withOpacity(0.5)),
             ),

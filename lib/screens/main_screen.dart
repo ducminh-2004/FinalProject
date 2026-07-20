@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'search_screen.dart';
+import 'room_list_screen.dart';
 import 'library_screen.dart';
 import 'trending_screen.dart';
 import 'premium_screen.dart';
@@ -25,6 +26,7 @@ class _MainScreenState extends State<MainScreen> {
   static const _tabs = <Widget>[
     HomeScreen(key: PageStorageKey('home')),
     SearchScreen(key: PageStorageKey('search')),
+    RoomListScreen(key: PageStorageKey('room')),
     TrendingScreen(key: PageStorageKey('trending')),
     LibraryScreen(key: PageStorageKey('library')),
     PremiumScreen(key: PageStorageKey('premium')),
@@ -73,6 +75,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.search_outlined),
                 selectedIcon: Icon(Icons.search_rounded),
                 label: 'Search',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.speaker_group_outlined),
+                selectedIcon: Icon(Icons.speaker_group_rounded),
+                label: 'Room',
               ),
               NavigationDestination(
                 icon: Icon(Icons.trending_up_outlined),

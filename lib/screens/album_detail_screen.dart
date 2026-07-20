@@ -6,6 +6,7 @@ import '../models/song.dart';
 import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../extensions/view_extensions.dart';
+import '../widgets/song_options_bottom_sheet.dart';
 import 'now_playing_screen.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
@@ -19,7 +20,6 @@ class AlbumDetailScreen extends StatefulWidget {
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   late List<Song> _songs;
-  bool _isLiked = true;
   bool _isDownloaded = false;
 
   @override
@@ -123,6 +123,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final subtitleText = widget.album.artist;
     final countText = '${_songs.length} bài hát';
     final typeLabel = _detectTypeLabel();
+    final userProvider = context.watch<UserProvider>();
+    final isLiked = userProvider.isAlbumLiked(widget.album.id);
 
     return Container(
       width: double.infinity,
@@ -259,8 +261,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                         ),
                         const SizedBox(width: 12),
                         _StatusLabel(
-                          label: _isLiked ? 'Đã thích' : 'Yêu thích',
-                          icon: _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          label: isLiked ? 'Đã thích' : 'Yêu thích',
+                          icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         ),
                         const SizedBox(width: 8),
                         _StatusLabel(
@@ -304,6 +306,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Widget _buildActions(Color mintGreen) {
+    final userProvider = context.watch<UserProvider>();
+    final isLiked = userProvider.isAlbumLiked(widget.album.id);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
@@ -338,10 +343,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           const SizedBox(width: 12),
           IconButton.filled(
             onPressed: () {
-              setState(() => _isLiked = !_isLiked);
+              userProvider.toggleLikeAlbum(widget.album.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(_isLiked ? 'Đã thích album!' : 'Đã bỏ thích album!'),
+                  content: Text(!isLiked ? 'Đã thích album!' : 'Đã bỏ thích album!'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -351,8 +356,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               foregroundColor: const Color(0xFF0A1F1A),
             ),
             icon: Icon(
-              _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: _isLiked ? const Color(0xFF0E6B5A) : const Color(0xFF0A1F1A),
+              isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              color: isLiked ? const Color(0xFF0E6B5A) : const Color(0xFF0A1F1A),
             ),
           ),
           const SizedBox(width: 12),
@@ -492,72 +497,7 @@ class _SongTile extends StatelessWidget {
   }
 
   void _showSongOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.playlist_add_rounded),
-              title: const Text('Thêm vào playlist'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Thêm vào playlist sắp có!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite_border_rounded),
-              title: const Text('Thêm vào danh sách yêu thích'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Đã thêm vào yêu thích!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.download_rounded),
-              title: const Text('Tải xuống'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Tải nhạc sắp có!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share_rounded),
-              title: const Text('Chia sẻ'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Chia sẻ sắp có!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+    SongOptionsBottomSheet.show(context, song);
   }
 }
 

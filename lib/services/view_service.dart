@@ -335,34 +335,6 @@ class ViewService {
     });
   }
 
-  static Stream<List<ViewRecord>> getUserHistoryStream(
-    String userId, {
-    int limit = 50,
-  }) {
-    return _db
-        .collection('views')
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((snapshot) {
-      final records = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return ViewRecord(
-          id: doc.id,
-          targetType: ViewTargetType.values.firstWhere(
-            (e) => e.name == data['targetType'],
-            orElse: () => ViewTargetType.song,
-          ),
-          targetId: data['targetId'] ?? '',
-          userId: data['userId'],
-          viewedAt: (data['viewedAt'] as Timestamp).toDate(),
-          durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
-        );
-      }).toList();
-      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-      return records.take(limit).toList();
-    });
-  }
-
   static Future<List<ViewRecord>> getUserHistory(
     String userId, {
     int limit = 50,
@@ -399,27 +371,40 @@ class ViewService {
     String userId, {
     int limit = 50,
   }) {
+    // Bỏ orderBy ở phía server để không yêu cầu Composite Index (giúp app chạy ngay)
+    // Chúng ta sẽ sắp xếp ở phía client (Dart) thay thế.
     return _db
         .collection('views')
         .where('userId', isEqualTo: userId)
-        .orderBy('viewedAt', descending: true)
-        .limit(limit)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = doc.data();
-              return ViewRecord(
-                id: doc.id,
-                targetType: ViewTargetType.values.firstWhere(
-                  (e) => e.name == data['targetType'],
-                  orElse: () => ViewTargetType.song,
-                ),
-                targetId: data['targetId'] ?? '',
-                userId: data['userId'],
-                viewedAt: data['viewedAt']?.toDate() ?? DateTime.now(),
-                durationSeconds:
-                    (data['durationSeconds'] as num?)?.toInt() ?? 0,
-              );
-            }).toList());
+        .map((snapshot) {
+      final records = snapshot.docs.map((doc) {
+        final data = doc.data();
+        DateTime timestamp;
+        if (data['viewedAt'] is Timestamp) {
+          timestamp = (data['viewedAt'] as Timestamp).toDate();
+        } else {
+          timestamp = DateTime.now();
+        }
+
+        return ViewRecord(
+          id: doc.id,
+          targetType: ViewTargetType.values.firstWhere(
+            (e) => e.name == data['targetType'],
+            orElse: () => ViewTargetType.song,
+          ),
+          targetId: data['targetId'] ?? '',
+          userId: data['userId'],
+          viewedAt: timestamp,
+          durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
+        );
+      }).toList();
+
+      // Sắp xếp giảm dần theo thời gian ở phía Client
+      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+      
+      return records.take(limit).toList();
+    });
   }
 
   // Helpers
