@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,6 +20,9 @@ class AudioProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   PlayerState _playerState = PlayerState.stopped;
+
+  // Fallback timer — polls position when onPositionChanged stream misses ticks
+  Timer? _positionTimer;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -55,18 +59,22 @@ class AudioProvider extends ChangeNotifier {
         case PlayerState.playing:
           _isPlaying = true;
           _playerState = PlayerState.playing;
+          _startPositionTimer();
           break;
         case PlayerState.paused:
           _isPlaying = false;
           _playerState = PlayerState.paused;
+          _stopPositionTimer();
           break;
         case PlayerState.stopped:
           _isPlaying = false;
           _playerState = PlayerState.stopped;
+          _stopPositionTimer();
           break;
         case PlayerState.completed:
           _isPlaying = false;
           _playerState = PlayerState.completed;
+          _stopPositionTimer();
           _onSongComplete();
           break;
         default:
@@ -79,6 +87,23 @@ class AudioProvider extends ChangeNotifier {
     _audioPlayer.onPlayerComplete.listen((_) {
       _onSongComplete();
     });
+  }
+
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (!_isPlaying) return;
+      final pos = await _audioPlayer.getCurrentPosition();
+      if (pos != null && (pos - _position).abs() > const Duration(milliseconds: 100)) {
+        _position = pos;
+        notifyListeners();
+      }
+    });
+  }
+
+  void _stopPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
   }
 
   void _onSongComplete() {
@@ -256,6 +281,7 @@ class AudioProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopPositionTimer();
     _audioPlayer.dispose();
     super.dispose();
   }

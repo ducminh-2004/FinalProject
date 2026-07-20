@@ -15,6 +15,7 @@ import 'admin_genres_screen.dart';
 import 'admin_subscriptions_screen.dart';
 import 'admin_playlists_screen.dart';
 import 'admin_revenue_screen.dart';
+import 'admin_artist_requests_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -762,6 +763,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 onTap: () => _navigateTo(AdminRevenueScreen()),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _ManagementCard(
+                icon: Icons.pending_actions_rounded,
+                title: 'Duyệt nghệ sĩ',
+                color: const Color(0xFF0E6B5A),
+                onTap: () => _navigateTo(const AdminArtistRequestsScreen()),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: SizedBox()),
           ],
         ),
       ],

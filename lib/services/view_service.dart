@@ -395,6 +395,34 @@ class ViewService {
     }
   }
 
+  static Stream<List<ViewRecord>> getUserHistoryStream(
+    String userId, {
+    int limit = 50,
+  }) {
+    return _db
+        .collection('views')
+        .where('userId', isEqualTo: userId)
+        .orderBy('viewedAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              return ViewRecord(
+                id: doc.id,
+                targetType: ViewTargetType.values.firstWhere(
+                  (e) => e.name == data['targetType'],
+                  orElse: () => ViewTargetType.song,
+                ),
+                targetId: data['targetId'] ?? '',
+                userId: data['userId'],
+                viewedAt: data['viewedAt']?.toDate() ?? DateTime.now(),
+                durationSeconds:
+                    (data['durationSeconds'] as num?)?.toInt() ?? 0,
+              );
+            }).toList());
+  }
+
+  // Helpers
   static String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
