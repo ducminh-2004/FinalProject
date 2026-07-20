@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/song.dart';
 import '../extensions/view_extensions.dart';
+import '../firebase/firestore_service.dart';
 
 enum PlayerState { stopped, playing, paused, completed }
 
@@ -24,6 +25,14 @@ class AudioProvider extends ChangeNotifier {
   // Fallback timer — polls position when onPositionChanged stream misses ticks
   Timer? _positionTimer;
 
+  // Radio mode
+  bool _isRadioMode = false;
+
+  // Sleep timer
+  Timer? _sleepTimer;
+  Timer? _sleepCountdown;
+  Duration? _sleepRemaining;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
@@ -35,6 +44,9 @@ class AudioProvider extends ChangeNotifier {
   Duration get duration => _duration;
   PlayerState get playerState => _playerState;
   bool get hasSong => _currentSong != null;
+  bool get hasSleepTimer => _sleepTimer != null;
+  Duration? get sleepRemaining => _sleepRemaining;
+  bool get isRadioMode => _isRadioMode;
 
   AudioProvider() {
     _initListeners();
@@ -109,9 +121,36 @@ class AudioProvider extends ChangeNotifier {
   void _onSongComplete() {
     if (_isRepeat) {
       playSong(_currentSong!, restart: true);
+    } else if (_currentIndex >= _playlist.length - 1 && _isRadioMode && _currentSong != null) {
+      _fetchRadioSuggestions(_currentSong!);
     } else {
       playNext();
     }
+  }
+
+  Future<void> _fetchRadioSuggestions(Song baseSong) async {
+    try {
+      List<Song> suggestions = [];
+      if (baseSong.genres.isNotEmpty) {
+        suggestions = await FirestoreService.getSongsByGenreName(baseSong.genres.first, limit: 10);
+      }
+      if (suggestions.isEmpty) {
+        suggestions = await FirestoreService.getSongs();
+      }
+      // Exclude songs already in playlist
+      final existingIds = _playlist.map((s) => s.id).toSet();
+      final fresh = suggestions.where((s) => !existingIds.contains(s.id)).toList();
+      if (fresh.isNotEmpty) {
+        _playlist.addAll(fresh);
+        notifyListeners();
+        await playNext();
+      }
+    } catch (_) {}
+  }
+
+  void toggleRadioMode() {
+    _isRadioMode = !_isRadioMode;
+    notifyListeners();
   }
 
   // Play a single song
@@ -259,6 +298,39 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Sleep timer
+  void setSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    _sleepCountdown?.cancel();
+    _sleepRemaining = duration;
+    notifyListeners();
+
+    _sleepTimer = Timer(duration, () {
+      pause();
+      _sleepTimer = null;
+      _sleepRemaining = null;
+      _sleepCountdown?.cancel();
+      _sleepCountdown = null;
+      notifyListeners();
+    });
+
+    _sleepCountdown = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_sleepRemaining != null && _sleepRemaining!.inSeconds > 0) {
+        _sleepRemaining = _sleepRemaining! - const Duration(seconds: 1);
+        notifyListeners();
+      }
+    });
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepCountdown?.cancel();
+    _sleepTimer = null;
+    _sleepCountdown = null;
+    _sleepRemaining = null;
+    notifyListeners();
+  }
+
   // Toggle repeat
   void toggleRepeat() {
     _isRepeat = !_isRepeat;
@@ -282,6 +354,8 @@ class AudioProvider extends ChangeNotifier {
   @override
   void dispose() {
     _stopPositionTimer();
+    _sleepTimer?.cancel();
+    _sleepCountdown?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }

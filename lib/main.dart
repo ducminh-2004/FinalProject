@@ -18,6 +18,8 @@ import 'providers/audio_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/analytics_provider.dart';
 import 'providers/lyrics_provider.dart';
+import 'providers/theme_provider.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,31 +39,29 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => LyricsProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title: 'Spotify',
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-        routes: {
-          '/': (_) => const SplashScreen(),
-          '/login': (_) => const LoginScreen(),
-          '/register': (_) => const RegisterScreen(),
-          '/forgot-password': (_) => const ForgotPasswordScreen(),
-          '/main': (_) => const MainScreen(),
-          '/library': (_) => const LibraryScreen(),
-          '/admin-dashboard': (_) => const AdminDashboardScreen(),
-          '/artist-register': (_) => const ArtistRegisterScreen(),
-          '/artist-dashboard': (_) => const ArtistDashboardScreen(),
-          '/now-playing': (_) => const NowPlayingScreen(),
-          '/liked-songs': (_) => const LikedSongsScreen(),
-        },
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E6B5A)),
-          useMaterial3: true,
-          scaffoldBackgroundColor: Colors.white,
-          textTheme: const TextTheme().apply(
-            fontFamilyFallback: const ['Roboto', 'Helvetica', 'Arial', 'sans-serif'],
-          ),
+      child: Consumer<ThemeProvider>(
+        builder: (_, themeProvider, __) => MaterialApp(
+          title: 'Spotify',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeProvider.themeMode,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          initialRoute: '/',
+          routes: {
+            '/': (_) => const SplashScreen(),
+            '/login': (_) => const LoginScreen(),
+            '/register': (_) => const RegisterScreen(),
+            '/forgot-password': (_) => const ForgotPasswordScreen(),
+            '/main': (_) => const MainScreen(),
+            '/library': (_) => const LibraryScreen(),
+            '/admin-dashboard': (_) => const AdminDashboardScreen(),
+            '/artist-register': (_) => const ArtistRegisterScreen(),
+            '/artist-dashboard': (_) => const ArtistDashboardScreen(),
+            '/now-playing': (_) => const NowPlayingScreen(),
+            '/liked-songs': (_) => const LikedSongsScreen(),
+          },
         ),
       ),
     );

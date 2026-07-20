@@ -8,6 +8,7 @@ import '../firebase/firestore_service.dart';
 import 'artist_detail_screen.dart';
 import 'genre_playlist_screen.dart';
 import 'now_playing_screen.dart';
+import '../theme/app_theme.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -113,15 +114,15 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: context.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F9F8),
-        surfaceTintColor: const Color(0xFFF7F9F8),
+        backgroundColor: context.bg,
+        surfaceTintColor: context.bg,
         elevation: 0,
-        title: const Text(
+        title: Text(
           'Search',
           style: TextStyle(
-            color: _darkText,
+            color: context.textPrimary,
             fontSize: 24,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
@@ -157,7 +158,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: context.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide.none,

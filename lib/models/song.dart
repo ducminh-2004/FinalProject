@@ -9,8 +9,9 @@ class Song {
   final String? audioUrl;
   final int? durationMs;
   final bool? isLiked;
-  final List<String> genres; 
+  final List<String> genres;
   final List<String> genreIds;
+  final DateTime? createdAt;
 
   const Song({
     required this.id,
@@ -23,6 +24,7 @@ class Song {
     this.isLiked,
     this.genres = const [],
     this.genreIds = const [],
+    this.createdAt,
   });
 
   // Getter để lấy tên nghệ sĩ chính (hoặc chuỗi kết hợp) để hiển thị nhanh
@@ -67,6 +69,11 @@ class Song {
       genreIdsList = (data['genreIds'] as List).cast<String>();
     }
 
+    DateTime? createdAt;
+    if (data['createdAt'] is Timestamp) {
+      createdAt = (data['createdAt'] as Timestamp).toDate();
+    }
+
     return Song(
       id: doc.id,
       title: data['title'] as String? ?? '',
@@ -78,6 +85,7 @@ class Song {
       isLiked: data['isLiked'] as bool?,
       genres: genresList,
       genreIds: genreIdsList,
+      createdAt: createdAt,
     );
   }
 
@@ -106,6 +114,7 @@ class Song {
     bool? isLiked,
     List<String>? genres,
     List<String>? genreIds,
+    DateTime? createdAt,
   }) {
     return Song(
       id: id ?? this.id,
@@ -118,6 +127,7 @@ class Song {
       isLiked: isLiked ?? this.isLiked,
       genres: genres ?? this.genres,
       genreIds: genreIds ?? this.genreIds,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 

@@ -806,6 +806,21 @@ class FirestoreService {
     });
   }
 
+  // Get songs by genre name (for radio mode suggestions)
+  static Future<List<Song>> getSongsByGenreName(String genre, {int limit = 10}) async {
+    try {
+      final snap = await _db
+          .collection('songs')
+          .where('genres', arrayContains: genre)
+          .limit(limit)
+          .get();
+      return snap.docs.map((d) => Song.fromFirestore(d)).toList();
+    } catch (e) {
+      debugPrint('Error getting songs by genre: $e');
+      return [];
+    }
+  }
+
   // Get songs uploaded by a specific artist (by artistId)
   static Future<List<Song>> getSongsByArtistId(String artistId) async {
     try {
@@ -816,6 +831,36 @@ class FirestoreService {
       return snapshot.docs.map((doc) => Song.fromFirestore(doc)).toList();
     } catch (e) {
       debugPrint('Error getting songs by artist: $e');
+      return [];
+    }
+  }
+
+  // Get new releases from a list of artist IDs, ordered by createdAt desc
+  static Future<List<Song>> getNewReleasesByArtists(
+      List<String> artistIds, {
+      int limit = 10,
+    }) async {
+    if (artistIds.isEmpty) return [];
+    try {
+      // Firestore whereIn supports max 10 items per query
+      final chunks = <List<String>>[];
+      for (var i = 0; i < artistIds.length; i += 10) {
+        chunks.add(artistIds.sublist(i, i + 10 > artistIds.length ? artistIds.length : i + 10));
+      }
+      final results = <Song>[];
+      for (final chunk in chunks) {
+        final snap = await _db
+            .collection('songs')
+            .where('artistIds', arrayContainsAny: chunk)
+            .orderBy('createdAt', descending: true)
+            .limit(limit)
+            .get();
+        results.addAll(snap.docs.map((d) => Song.fromFirestore(d)));
+      }
+      results.sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+      return results.take(limit).toList();
+    } catch (e) {
+      debugPrint('Error getting new releases: $e');
       return [];
     }
   }
