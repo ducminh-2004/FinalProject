@@ -7,6 +7,7 @@ import '../../models/song.dart';
 import '../../models/artist.dart';
 import '../../models/album.dart';
 import '../../firebase/firestore_service.dart';
+import '../lyrics_editor_screen.dart';
 
 class AdminSongsScreen extends StatefulWidget {
   const AdminSongsScreen({super.key});
@@ -100,6 +101,7 @@ class _AdminSongsScreenState extends State<AdminSongsScreen> {
                               song: _filteredSongs[index],
                               onEdit: () => _showSongDialog(context, song: _filteredSongs[index]),
                               onDelete: () => _deleteSong(_filteredSongs[index]),
+                              onLyrics: () => _showLyricsSheet(context, _filteredSongs[index]),
                             );
                           },
                         ),
@@ -186,6 +188,13 @@ class _AdminSongsScreenState extends State<AdminSongsScreen> {
     );
   }
 
+  void _showLyricsSheet(BuildContext context, Song song) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LyricsEditorScreen(song: song)),
+    );
+  }
+
   Future<void> _deleteSong(Song song) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -222,8 +231,14 @@ class _SongTile extends StatelessWidget {
   final Song song;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onLyrics;
 
-  const _SongTile({required this.song, required this.onEdit, required this.onDelete});
+  const _SongTile({
+    required this.song,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onLyrics,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -296,6 +311,8 @@ class _SongTile extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _ActionButton(icon: Icons.lyrics_outlined, color: Colors.deepPurpleAccent, onTap: onLyrics),
+                      const SizedBox(width: 8),
                       _ActionButton(icon: Icons.edit_outlined, color: Colors.blueAccent, onTap: onEdit),
                       const SizedBox(width: 8),
                       _ActionButton(icon: Icons.delete_outline_rounded, color: Colors.redAccent, onTap: onDelete),
