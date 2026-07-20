@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
-import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/auth_service.dart';
 import '../firebase/firestore_service.dart';
-import '../providers/user_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,6 +50,24 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // 1. Kiểm tra email có tồn tại trong hệ thống Firestore hay không
+      final userQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: _emailController.text.trim())
+          .get();
+
+      if (userQuery.docs.isEmpty) {
+        throw Exception('Email không tồn tại trong hệ thống.');
+      }
+
+      final userData = userQuery.docs.first.data();
+      
+      // 2. Kiểm tra tài khoản có bị khóa hoặc vô hiệu hóa không
+      if (userData['isBanned'] == true) {
+        throw Exception('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ hỗ trợ.');
+      }
+
+      // 3. Thực hiện đăng nhập (Xác thực mật khẩu qua Firebase Auth)
       final user = await _authService.signInWithEmail(
         _emailController.text.trim(),
         _passwordController.text,
@@ -59,15 +76,17 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (user != null) {
+        // Cập nhật tài liệu người dùng nếu cần
         await FirestoreService.createUserDocument(
           userId: user.uid,
           email: user.email ?? _emailController.text.trim(),
           displayName: user.displayName,
         );
+        
         if (!mounted) return;
         
-        // Check if admin and redirect accordingly
-        final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
+        // Kiểm tra quyền Admin
+        final isAdmin = userData['role'] == 'admin' || userData['isAdmin'] == true;
         if (isAdmin) {
           Navigator.of(context).pushReplacementNamed('/admin-dashboard');
         } else {
@@ -76,8 +95,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      String errorMsg = e.toString();
+      if (errorMsg.contains('Exception: ')) {
+        errorMsg = errorMsg.split('Exception: ').last;
+      } else if (errorMsg.contains('wrong-password') || errorMsg.contains('Mật khẩu không đúng')) {
+        errorMsg = 'Mật khẩu không chính xác.';
+      }
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = errorMsg;
       });
     } finally {
       if (mounted) {
@@ -97,14 +122,21 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (user != null) {
+        // Kiểm tra xem tài khoản Google này có bị ban không
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        if (userDoc.exists && userDoc.data()?['isBanned'] == true) {
+          await _authService.signOut();
+          throw Exception('Tài khoản Google này đã bị khóa.');
+        }
+
         await FirestoreService.createUserDocument(
           userId: user.uid,
           email: user.email ?? '',
           displayName: user.displayName,
         );
+        
         if (!mounted) return;
         
-        // Check if admin and redirect accordingly
         final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
         if (isAdmin) {
           Navigator.of(context).pushReplacementNamed('/admin-dashboard');
@@ -114,30 +146,15 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      String errorMsg = e.toString();
+      if (errorMsg.contains('Exception: ')) errorMsg = errorMsg.split('Exception: ').last;
       setState(() {
-        _errorMessage = 'Đăng nhập Google thất bại. Vui lòng thử lại.';
+        _errorMessage = 'Đăng nhập Google thất bại: $errorMsg';
       });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
-    }
-  }
-
-  Future<void> _handleAppleSignIn() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    // TODO: Implement Apple Sign-In
-    // For now, show a message that it's not available
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Apple Sign-In sẽ sớm có sẵn.';
-      });
     }
   }
 
@@ -170,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: _mintGreen,
                         boxShadow: [
                           BoxShadow(
-                            color: _mintGreen.withOpacity(0.28),
+                            color: _mintGreen.withValues(alpha: 0.28),
                             blurRadius: 24,
                             offset: const Offset(0, 10),
                           ),
@@ -199,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Sign in to continue listening',
                     textAlign: TextAlign.center,
                     style: _bodyStyle.copyWith(
-                      color: _darkText.withOpacity(0.55),
+                      color: _darkText.withValues(alpha: 0.55),
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -210,42 +227,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     style: _bodyStyle.copyWith(color: _darkText, fontSize: 15),
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      labelStyle: _bodyStyle.copyWith(
-                        color: _darkText.withOpacity(0.65),
-                        fontSize: 14,
-                      ),
-                      hintText: 'you@example.com',
-                      hintStyle: _bodyStyle.copyWith(
-                        color: _darkText.withOpacity(0.35),
-                        fontSize: 14,
-                      ),
-                      prefixIcon: Icon(Icons.email_outlined, color: _darkText.withOpacity(0.55)),
-                      filled: true,
-                      fillColor: _lightSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: _mintGreen, width: 1.4),
-                      ),
-                      errorBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: Colors.red.shade400),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: _inputDecoration(
+                      label: 'Email',
+                      hint: 'you@example.com',
+                      icon: Icons.email_outlined,
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty) return 'Vui lòng nhập email';
+                      if (value == null || value.trim().isEmpty) return 'Email không được để trống.';
                       final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-                      if (!emailRegex.hasMatch(value)) return 'Email không hợp lệ';
+                      if (!emailRegex.hasMatch(value.trim())) return 'Email phải đúng định dạng.';
                       return null;
                     },
                   ),
@@ -255,48 +245,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     obscureText: !_isPasswordVisible,
                     textInputAction: TextInputAction.done,
                     style: _bodyStyle.copyWith(color: _darkText, fontSize: 15),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      labelStyle: _bodyStyle.copyWith(
-                        color: _darkText.withOpacity(0.65),
-                        fontSize: 14,
-                      ),
-                      hintText: 'Enter your password',
-                      hintStyle: _bodyStyle.copyWith(
-                        color: _darkText.withOpacity(0.35),
-                        fontSize: 14,
-                      ),
-                      prefixIcon: Icon(Icons.lock_outline_rounded, color: _darkText.withOpacity(0.55)),
-                      suffixIcon: IconButton(
+                    decoration: _inputDecoration(
+                      label: 'Password',
+                      hint: 'Enter your password',
+                      icon: Icons.lock_outline_rounded,
+                      suffix: IconButton(
                         onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
                         icon: Icon(
                           _isPasswordVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: _darkText.withOpacity(0.55),
+                          color: _darkText.withValues(alpha: 0.55),
                         ),
                       ),
-                      filled: true,
-                      fillColor: _lightSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: _mintGreen, width: 1.4),
-                      ),
-                      errorBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: Colors.red.shade400),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty) return 'Vui lòng nhập mật khẩu';
-                      if (value.length < 6) return 'Mật khẩu tối thiểu 6 ký tự';
+                      if (value == null || value.isEmpty) return 'Mật khẩu không được để trống.';
                       return null;
                     },
                   ),
@@ -346,21 +308,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _mintGreen,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: _mintGreen.withOpacity(0.7),
-                      minimumSize: const Size(double.infinity, 52),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                      elevation: 0,
-                      shadowColor: _mintGreen.withOpacity(0.25),
-                    ),
+                    style: _buttonStyle(),
                     child: _isLoading
-                        ? const SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
+                        ? const _LoadingIndicator()
                         : Text(
                             'Log in',
                             style: _bodyStyle.copyWith(
@@ -372,52 +322,28 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 18),
                   Row(
                     children: [
-                      Expanded(child: Divider(color: _darkText.withOpacity(0.15), thickness: 1)),
+                      Expanded(child: Divider(color: _darkText.withValues(alpha: 0.15), thickness: 1)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           'or',
                           style: _bodyStyle.copyWith(
-                            color: _darkText.withOpacity(0.5),
+                            color: _darkText.withValues(alpha: 0.5),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      Expanded(child: Divider(color: _darkText.withOpacity(0.15), thickness: 1)),
+                      Expanded(child: Divider(color: _darkText.withValues(alpha: 0.15), thickness: 1)),
                     ],
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _handleGoogleSignIn,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _darkText,
-                      side: const BorderSide(color: _mintGreen, width: 1.2),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
+                    style: _outlinedButtonStyle(),
                     icon: Icon(Icons.g_mobiledata_rounded, size: 22, color: _darkText),
                     label: Text(
                       'Continue with Google',
-                      style: _bodyStyle.copyWith(
-                        color: _darkText,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _handleAppleSignIn,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _darkText,
-                      side: const BorderSide(color: _mintGreen, width: 1.2),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    icon: Icon(Icons.apple_rounded, size: 24, color: _darkText),
-                    label: Text(
-                      'Continue with Apple',
                       style: _bodyStyle.copyWith(
                         color: _darkText,
                         fontWeight: FontWeight.w600,
@@ -432,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         "Don't have an account? ",
                         style: _bodyStyle.copyWith(
-                          color: _darkText.withOpacity(0.6),
+                          color: _darkText.withValues(alpha: 0.6),
                           fontSize: 13,
                         ),
                       ),
@@ -460,6 +386,57 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  InputDecoration _inputDecoration({required String label, required String hint, required IconData icon, Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: _bodyStyle.copyWith(color: _darkText.withValues(alpha: 0.65), fontSize: 14),
+      hintText: hint,
+      hintStyle: _bodyStyle.copyWith(color: _darkText.withValues(alpha: 0.35), fontSize: 14),
+      prefixIcon: Icon(icon, color: _darkText.withValues(alpha: 0.55)),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: _lightSurface,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _mintGreen, width: 1.4)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.red.shade400)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
+  ButtonStyle _buttonStyle() {
+    return ElevatedButton.styleFrom(
+      backgroundColor: _mintGreen,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: _mintGreen.withValues(alpha: 0.7),
+      minimumSize: const Size(double.infinity, 52),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 0,
+    );
+  }
+
+  ButtonStyle _outlinedButtonStyle() {
+    return OutlinedButton.styleFrom(
+      foregroundColor: _darkText,
+      side: const BorderSide(color: _mintGreen, width: 1.2),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+}
+
+class _LoadingIndicator extends StatelessWidget {
+  const _LoadingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 22,
+      width: 22,
+      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
     );
   }
 }
