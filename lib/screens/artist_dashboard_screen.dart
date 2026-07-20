@@ -10,6 +10,7 @@ import '../providers/user_provider.dart';
 import '../firebase/firestore_service.dart';
 import '../services/cloudinary_service.dart';
 import 'album_creator_screen.dart';
+import 'lyrics_editor_screen.dart';
 
 const _mintGreen = Color(0xFF0E6B5A);
 const _darkText = Color(0xFF0A1F1A);
@@ -260,6 +261,12 @@ class _ArtistDashboardScreenState extends State<ArtistDashboardScreen> {
                               song: s,
                               onEdit: () => _openUploadSheet(song: s),
                               onDelete: () => _deleteSong(s),
+                              onLyrics: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => LyricsEditorScreen(song: s),
+                                ),
+                              ),
                             )),
                       const SizedBox(height: 80),
                     ],
@@ -358,8 +365,14 @@ class _SongTile extends StatelessWidget {
   final Song song;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onLyrics;
 
-  const _SongTile({required this.song, required this.onEdit, required this.onDelete});
+  const _SongTile({
+    required this.song,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onLyrics,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -388,6 +401,11 @@ class _SongTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              onPressed: onLyrics,
+              icon: const Icon(Icons.lyrics_outlined, color: Colors.deepPurpleAccent),
+              tooltip: 'Lời bài hát',
+            ),
             IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined)),
             IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline, color: Colors.red)),
           ],
