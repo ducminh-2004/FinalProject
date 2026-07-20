@@ -144,8 +144,7 @@ class ViewService {
         transaction.update(statsRef, {
           'totalViews': FieldValue.increment(1),
           'totalListenTime': FieldValue.increment(durationSeconds),
-          'lastViewedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+          'lastViewedAt': DateTime.now(),
         });
       } else {
         transaction.set(statsRef, {
@@ -153,8 +152,7 @@ class ViewService {
           'targetId': targetId,
           'totalViews': 1,
           'totalListenTime': durationSeconds,
-          'lastViewedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+          'lastViewedAt': DateTime.now(),
         });
       }
     });
@@ -197,25 +195,45 @@ class ViewService {
     DateTime? since,
   }) async {
     try {
-      Query query = _db.collection('view_stats')
-          .where('targetType', isEqualTo: 'song');
+      // Lấy tất cả bản ghi thống kê (không dùng where/orderBy để tránh lỗi Index)
+      final snapshot = await _db.collection('view_stats').get();
 
-      if (since != null) {
-        query = query.where('lastViewedAt', isGreaterThan: since);
-      }
-
-      final snapshot = await query
-          .orderBy('totalViews', descending: true)
-          .limit(limit)
-          .get();
-
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return <String, dynamic>{
-          ...data,
-          'id': doc.id.replaceFirst('song_', ''),
-        };
+      final List<Map<String, dynamic>> results = [];
+      
+      // Lọc bằng code Dart
+      final songDocs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        return data['targetType'] == 'song';
       }).toList();
+
+      // Sắp xếp giảm dần theo lượt xem bằng code Dart
+      songDocs.sort((a, b) {
+        final viewsA = (a.data()['totalViews'] as num?)?.toInt() ?? 0;
+        final viewsB = (b.data()['totalViews'] as num?)?.toInt() ?? 0;
+        return viewsB.compareTo(viewsA);
+      });
+
+      // Lấy số lượng giới hạn
+      final topDocs = songDocs.take(limit);
+
+      for (var doc in topDocs) {
+        final data = doc.data();
+        final songId = data['targetId'] ?? doc.id.replaceFirst('song_', '');
+        
+        final songDoc = await _db.collection('songs').doc(songId).get();
+        String title = 'Bài hát không tên';
+        if (songDoc.exists) {
+          title = songDoc.data()?['title'] ?? 'Bài hát không tên';
+        }
+
+        results.add(<String, dynamic>{
+          ...data,
+          'id': songId,
+          'title': title,
+        });
+      }
+      
+      return results;
     } catch (e) {
       debugPrint('Error getting top songs: $e');
       return [];
@@ -240,13 +258,27 @@ class ViewService {
           .limit(limit)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final List<Map<String, dynamic>> results = [];
+
+      for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        return <String, dynamic>{
+        final artistId = data['targetId'] ?? doc.id.replaceFirst('artist_', '');
+
+        // Truy xuất tên nghệ sĩ từ collection 'artists'
+        final artistDoc = await _db.collection('artists').doc(artistId).get();
+        String name = 'Nghệ sĩ ẩn danh';
+        if (artistDoc.exists) {
+          name = artistDoc.data()?['name'] ?? 'Nghệ sĩ ẩn danh';
+        }
+
+        results.add(<String, dynamic>{
           ...data,
-          'id': doc.id.replaceFirst('artist_', ''),
-        };
-      }).toList();
+          'id': artistId,
+          'name': name,
+        });
+      }
+
+      return results;
     } catch (e) {
       debugPrint('Error getting top artists: $e');
       return [];
@@ -258,104 +290,72 @@ class ViewService {
     int days = 7,
   }) async {
     try {
-      final since = DateTime.now().subtract(Duration(days: days));
-      final snapshot = await _db
-          .collection('view_stats')
-          .where('lastViewedAt', isGreaterThan: since)
-          .get();
-
-      final Map<String, DailyStats> statsMap = {};
-
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final targetType = data['targetType'] as String?;
-        final lastViewed = data['lastViewedAt']?.toDate();
+      final List<DailyStats> results = [];
+      final now = DateTime.now();
+      
+      for (int i = 0; i < days; i++) {
+        final date = now.subtract(Duration(days: i));
+        final dateStr = _formatDate(date);
         
-        if (lastViewed == null) continue;
-
-        final dateKey = _formatDate(lastViewed);
-        final views = (data['totalViews'] as num?)?.toInt() ?? 0;
-
-        if (!statsMap.containsKey(dateKey)) {
-          statsMap[dateKey] = DailyStats(
-            date: lastViewed,
-            songViews: 0,
-            albumViews: 0,
-            artistViews: 0,
-            totalListenTime: 0,
-            uniqueUsers: 0,
-          );
+        final snapshot = await _db.collection('daily_song_stats')
+            .where('date', isEqualTo: dateStr)
+            .get();
+            
+        int totalViews = 0;
+        for (var doc in snapshot.docs) {
+          totalViews += (doc.data()['views'] as num?)?.toInt() ?? 0;
         }
-
-        final current = statsMap[dateKey]!;
-        switch (targetType) {
-          case 'song':
-            statsMap[dateKey] = DailyStats(
-              date: current.date,
-              songViews: current.songViews + views,
-              albumViews: current.albumViews,
-              artistViews: current.artistViews,
-              totalListenTime: current.totalListenTime +
-                  ((data['totalListenTime'] as num?)?.toInt() ?? 0),
-              uniqueUsers: current.uniqueUsers,
-            );
-            break;
-          case 'album':
-            statsMap[dateKey] = DailyStats(
-              date: current.date,
-              songViews: current.songViews,
-              albumViews: current.albumViews + views,
-              artistViews: current.artistViews,
-              totalListenTime: current.totalListenTime,
-              uniqueUsers: current.uniqueUsers,
-            );
-            break;
-          case 'artist':
-            statsMap[dateKey] = DailyStats(
-              date: current.date,
-              songViews: current.songViews,
-              albumViews: current.albumViews,
-              artistViews: current.artistViews + views,
-              totalListenTime: current.totalListenTime,
-              uniqueUsers: current.uniqueUsers,
-            );
-            break;
-        }
+        
+        results.add(DailyStats(
+          date: DateTime(date.year, date.month, date.day),
+          songViews: totalViews,
+          albumViews: 0,
+          artistViews: 0,
+          totalListenTime: 0,
+          uniqueUsers: 0,
+        ));
       }
-
-      return statsMap.values.toList()..sort((a, b) => a.date.compareTo(b.date));
+      
+      return results.reversed.toList();
     } catch (e) {
       debugPrint('Error getting daily stats: $e');
       return [];
     }
   }
 
-  // Get user's listening history as a stream
-  static Stream<List<ViewRecord>> getUserHistoryStream(
-    String userId, {
-    int limit = 50,
-  }) {
-    return _db
-        .collection('views')
-        .where('userId', isEqualTo: userId)
+  // Get artist analytics stream (top 10 with resolved names)
+  static Stream<List<Map<String, dynamic>>> getArtistAnalyticsStream({int limit = 10}) {
+    return _db.collection('view_stats')
+        .where('targetType', isEqualTo: 'artist')
         .snapshots()
-        .map((snapshot) {
-      final records = snapshot.docs.map((doc) {
+        .asyncMap((snapshot) async {
+      final List<Map<String, dynamic>> results = [];
+      
+      // Filter and Sort in memory to avoid Index requirements
+      final docs = snapshot.docs;
+      docs.sort((a, b) => ((b.data()['totalViews'] as num?) ?? 0)
+          .compareTo((a.data()['totalViews'] as num?) ?? 0));
+
+      final topDocs = docs.take(limit);
+
+      for (var doc in topDocs) {
         final data = doc.data();
-        return ViewRecord(
-          id: doc.id,
-          targetType: ViewTargetType.values.firstWhere(
-            (e) => e.name == data['targetType'],
-            orElse: () => ViewTargetType.song,
-          ),
-          targetId: data['targetId'] ?? '',
-          userId: data['userId'],
-          viewedAt: data['viewedAt']?.toDate() ?? DateTime.now(),
-          durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
-        );
-      }).toList();
-      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-      return records.take(limit).toList();
+        final artistId = data['targetId'] ?? doc.id.replaceFirst('artist_', '');
+        
+        final artistDoc = await _db.collection('artists').doc(artistId).get();
+        final artistData = artistDoc.data();
+        String name = artistDoc.exists ? (artistData?['name'] ?? 'Unknown') : 'Unknown';
+        String? avatarUrl = artistDoc.exists ? (artistData?['avatarUrl'] ?? artistData?['imageUrl']) : null;
+
+        results.add({
+          ...data,
+          'id': artistId,
+          'name': name,
+          'avatarUrl': avatarUrl,
+          'totalViews': (data['totalViews'] as num?)?.toInt() ?? 0,
+        });
+      }
+      return results;
     });
   }
 
@@ -368,9 +368,11 @@ class ViewService {
       final snapshot = await _db
           .collection('views')
           .where('userId', isEqualTo: userId)
+          .orderBy('viewedAt', descending: true)
+          .limit(limit)
           .get();
 
-      final records = snapshot.docs.map((doc) {
+      return snapshot.docs.map((doc) {
         final data = doc.data()!;
         return ViewRecord(
           id: doc.id,
@@ -384,8 +386,6 @@ class ViewService {
           durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
         );
       }).toList();
-      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-      return records.take(limit).toList();
     } catch (e) {
       debugPrint('Error getting user history: $e');
       return [];

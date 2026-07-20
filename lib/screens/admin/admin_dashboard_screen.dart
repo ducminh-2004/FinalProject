@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import '../../firebase/firestore_service.dart';
 import '../../services/view_service.dart';
 import '../../models/view_model.dart';
 import '../../providers/user_provider.dart';
-import '../profile_screen.dart'; // Import ProfileScreen
+import '../../providers/analytics_provider.dart';
 import 'admin_users_screen.dart';
 import 'admin_songs_screen.dart';
 import 'admin_artists_screen.dart';
 import 'admin_albums_screen.dart';
 import 'admin_genres_screen.dart';
 import 'admin_subscriptions_screen.dart';
-import 'admin_artist_requests_screen.dart';
-
-const _mintGreen = Color(0xFF0E6B5A);
-const _darkText = Color(0xFF0A1F1A);
+import 'admin_playlists_screen.dart';
+import 'admin_revenue_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -28,8 +27,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, int> _stats = {};
   List<Map<String, dynamic>> _topSongs = [];
   List<DailyStats> _dailyStats = [];
-  int _pendingArtistRequests = 0;
   bool _isLoading = true;
+
+  static const _primaryColor = Color(0xFF0E6B5A);
+  static const _accentColor = Color(0xFF1DB954);
+  static const _bgColor = Color(0xFFF8FAF9);
+  static const _darkText = Color(0xFF0A1F1A);
 
   @override
   void initState() {
@@ -44,13 +47,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         FirestoreService.getSystemStats(),
         ViewService.getTopSongs(limit: 5),
         ViewService.getDailyStats(days: 7),
-        FirestoreService.getPendingArtistRequestCount(),
+        FirestoreService.getTotalRevenue(),
       ]);
-
+      
       _stats = results[0] as Map<String, int>;
       _topSongs = results[1] as List<Map<String, dynamic>>;
       _dailyStats = results[2] as List<DailyStats>;
-      _pendingArtistRequests = results[3] as int;
+      _stats['revenue'] = (results[3] as double).toInt();
+
+      // DEBUG: In danh sách top bài hát ra console
+      debugPrint('--- TOP 5 SONGS DATA ---');
+      if (_topSongs.isEmpty) {
+        debugPrint('Không có dữ liệu bài hát nào trong view_stats.');
+      } else {
+        for (var i = 0; i < _topSongs.length; i++) {
+          final song = _topSongs[i];
+          debugPrint('${i + 1}. Title: ${song['title']}, Views: ${song['totalViews']}, ID: ${song['id']}');
+        }
+      }
+      debugPrint('------------------------');
     } catch (e) {
       debugPrint('Error loading stats: $e');
     }
@@ -62,101 +77,113 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
-      appBar: AppBar(
-        backgroundColor: _mintGreen,
-        surfaceTintColor: _mintGreen,
-        elevation: 0,
+      backgroundColor: _bgColor,
+      body: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          _buildSliverAppBar(),
+          SliverToBoxAdapter(
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader('Hệ thống', Icons.analytics_outlined),
+                    const SizedBox(height: 16),
+                    _buildStatsGrid(),
+                    const SizedBox(height: 16),
+                    _buildRevenueSummaryCard(),
+                    const SizedBox(height: 32),
+
+                    _buildSectionHeader('Hiệu suất', Icons.bar_chart_rounded),
+                    const SizedBox(height: 16),
+                    _buildCharts(),
+                    const SizedBox(height: 32),
+
+                    _buildSectionHeader('Artist Analytics', Icons.person_search_rounded),
+                    const SizedBox(height: 16),
+                    _buildArtistAnalytics(),
+                    const SizedBox(height: 32),
+
+                    _buildSectionHeader('Quản lý', Icons.settings_outlined),
+                    const SizedBox(height: 16),
+                    _buildManagementGrid(),
+
+                    const SizedBox(height: 48),
+                    _buildLogoutButton(),
+                    const SizedBox(height: 100),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: 120.0,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      backgroundColor: _primaryColor,
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+        centerTitle: false,
         title: const Text(
           'Quản trị viên',
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
           ),
         ),
-        actions: [
-          IconButton(
-            onPressed: () async {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đang tạo dữ liệu ảo...')));
-              await ViewService.simulateFakeViews();
-              await _loadData(); // Tải lại biểu đồ
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã tạo xong! Hãy kiểm tra Trending.')));
-              }
-            },
-            icon: const Icon(Icons.bolt_rounded, color: Colors.amber), // Nút sét cho máu
-            tooltip: 'Tạo data ảo',
-          ),
-          _AvatarButton(onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            );
-          }),
-          const SizedBox(width: 16),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Stats grid
-              _buildSectionTitle('Tổng quan'),
-              const SizedBox(height: 12),
-              _buildStatsGrid(),
-              const SizedBox(height: 24),
-
-              // Charts
-              _buildSectionTitle('Thống kê lượt xem'),
-              const SizedBox(height: 12),
-              _buildCharts(),
-              const SizedBox(height: 24),
-
-              // Management sections
-              _buildSectionTitle('Quản lý'),
-              const SizedBox(height: 12),
-              _buildManagementGrid(),
-              
-              const SizedBox(height: 32),
-              // Logout Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    context.read<UserProvider>().signOut();
-                    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-                  },
-                  icon: const Icon(Icons.logout_rounded, color: Colors.red),
-                  label: const Text('Đăng xuất', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+        background: Stack(
+          children: [
+            Positioned(
+              right: -50,
+              top: -50,
+              child: CircleAvatar(
+                radius: 100,
+                backgroundColor: Colors.white.withOpacity(0.05),
               ),
-              const SizedBox(height: 100),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+      actions: [
+        IconButton(
+          onPressed: _loadData,
+          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(right: 16),
+          child: _AvatarButton(),
+        ),
+      ],
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: _darkText,
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.2,
-      ),
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: _primaryColor, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            color: _darkText,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ],
     );
   }
 
@@ -165,156 +192,483 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.5, // Tăng tỉ lệ để tránh tràn chữ
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      childAspectRatio: 1.4,
       children: [
         _StatCard(
           icon: Icons.music_note_rounded,
           label: 'Bài hát',
           value: _stats['songs']?.toString() ?? '0',
-          color: const Color(0xFF1DB954),
+          gradient: const [Color(0xFF1DB954), Color(0xFF138E41)],
         ),
         _StatCard(
           icon: Icons.person_rounded,
           label: 'Nghệ sĩ',
           value: _stats['artists']?.toString() ?? '0',
-          color: const Color(0xFFE13300),
+          gradient: const [Color(0xFFE13300), Color(0xFFB32900)],
         ),
         _StatCard(
           icon: Icons.album_rounded,
           label: 'Album',
           value: _stats['albums']?.toString() ?? '0',
-          color: const Color(0xFF8D67AB),
+          gradient: const [Color(0xFF8D67AB), Color(0xFF6C4D8A)],
         ),
         _StatCard(
           icon: Icons.group_rounded,
           label: 'Người dùng',
           value: _stats['users']?.toString() ?? '0',
-          color: const Color(0xFFDC148C),
+          gradient: const [Color(0xFFDC148C), Color(0xFFAA106C)],
         ),
       ],
+    );
+  }
+
+  Widget _buildRevenueSummaryCard() {
+    final revenue = _stats['revenue'] ?? 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF9800), Color(0xFFF57C00)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => _navigateTo(AdminRevenueScreen()),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.monetization_on_rounded, color: Colors.white, size: 32),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Tổng doanh thu (VNĐ)',
+                    style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${NumberFormat.decimalPattern().format(revenue)}đ',
+                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildCharts() {
-    if (_isLoading) return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+    if (_isLoading) {
+      return Container(
+        height: 200,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: const Center(child: CircularProgressIndicator(color: _primaryColor)),
+      );
+    }
 
     return Column(
       children: [
-        _buildChartCard(
-          'Top 5 bài hát theo lượt nghe',
-          _topSongs.isEmpty 
-            ? const Center(child: Text('Chưa có dữ liệu lượt nghe'))
-            : BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  maxY: (_topSongs.isNotEmpty ? (_topSongs[0]['totalViews'] as num).toDouble() + 5 : 20),
-                  barGroups: _topSongs.asMap().entries.map((entry) {
-                    return BarChartGroupData(
-                      x: entry.key,
-                      barRods: [
-                        BarChartRodData(
-                          toY: (entry.value['totalViews'] as num).toDouble(),
-                          color: _mintGreen,
-                          width: 16,
-                          borderRadius: BorderRadius.circular(4),
-                        )
-                      ],
-                    );
-                  }).toList(),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          int index = value.toInt();
-                          if (index >= 0 && index < _topSongs.length) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                (_topSongs[index]['title'] ?? '').toString().substring(0, 3),
-                                style: const TextStyle(fontSize: 10),
-                              ),
+        _buildChartContainer(
+          'Top 5 bài hát phổ biến',
+          'Dựa trên tổng lượt nghe',
+          _topSongs.isEmpty
+              ? const _EmptyChart(message: 'Chưa có dữ liệu bài hát')
+              : AspectRatio(
+                  aspectRatio: 1.7,
+                  child: BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: (_topSongs.isNotEmpty ? (_topSongs[0]['totalViews'] as num).toDouble() * 1.2 : 20),
+                      barTouchData: BarTouchData(
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (group) => _primaryColor,
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            return BarTooltipItem(
+                              '${_topSongs[groupIndex]['title']}\n',
+                              const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              children: [
+                                TextSpan(
+                                  text: '${rod.toY.toInt()} lượt nghe',
+                                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w500, fontSize: 12),
+                                ),
+                              ],
                             );
-                          }
-                          return const Text('');
-                        },
+                          },
+                        ),
                       ),
+                      barGroups: _topSongs.asMap().entries.map((entry) {
+                        return BarChartGroupData(
+                          x: entry.key,
+                          barRods: [
+                            BarChartRodData(
+                              toY: (entry.value['totalViews'] as num).toDouble(),
+                              gradient: const LinearGradient(
+                                colors: [_primaryColor, _accentColor],
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                              ),
+                              width: 14,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                            )
+                          ],
+                        );
+                      }).toList(),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (value, meta) {
+                              int index = value.toInt();
+                              if (index >= 0 && index < _topSongs.length) {
+                                String title = _topSongs[index]['title'] ?? '';
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    title.length > 5 ? '${title.substring(0, 5)}..' : title,
+                                    style: TextStyle(fontSize: 10, color: _darkText.withOpacity(0.4), fontWeight: FontWeight.bold),
+                                  ),
+                                );
+                              }
+                              return const Text('');
+                            },
+                          ),
+                        ),
+                        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      ),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: _darkText.withOpacity(0.05),
+                          strokeWidth: 1,
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
                     ),
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
-                  gridData: const FlGridData(show: false),
-                  borderData: FlBorderData(show: false),
                 ),
-              ),
         ),
         const SizedBox(height: 16),
-        _buildChartCard(
-          'Xu hướng lượt nghe (7 ngày qua)',
+        _buildChartContainer(
+          'Xu hướng nghe nhạc',
+          'Thống kê trong 7 ngày qua',
           _dailyStats.isEmpty
-            ? const Center(child: Text('Chưa có thống kê ngày'))
-            : LineChart(
-                LineChartData(
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: _dailyStats.asMap().entries.map((entry) {
-                        return FlSpot(entry.key.toDouble(), entry.value.totalViews.toDouble());
-                      }).toList(),
-                      isCurved: true,
-                      color: _mintGreen,
-                      barWidth: 4,
-                      dotData: const FlDotData(show: true),
-                      belowBarData: BarAreaData(show: true, color: _mintGreen.withValues(alpha: 0.1)),
-                    ),
-                  ],
-                  titlesData: FlTitlesData(
-                    show: true,
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          int index = value.toInt();
-                          if (index >= 0 && index < _dailyStats.length) {
-                            return Text(
-                              '${_dailyStats[index].date.day}/${_dailyStats[index].date.month}',
-                              style: const TextStyle(fontSize: 10),
-                            );
-                          }
-                          return const Text('');
-                        },
+              ? const _EmptyChart(message: 'Chưa có dữ liệu xu hướng')
+              : AspectRatio(
+                  aspectRatio: 1.7,
+                  child: LineChart(
+                    LineChartData(
+                      lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (spot) => _primaryColor,
+                          getTooltipItems: (touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              final date = _dailyStats[spot.x.toInt()].date;
+                              return LineTooltipItem(
+                                '${date.day}/${date.month}\n',
+                                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                children: [
+                                  TextSpan(
+                                    text: '${spot.y.toInt()} lượt nghe',
+                                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w500, fontSize: 12),
+                                  ),
+                                ],
+                              );
+                            }).toList();
+                          },
+                        ),
                       ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: _dailyStats.asMap().entries.map((entry) {
+                            return FlSpot(entry.key.toDouble(), entry.value.totalViews.toDouble());
+                          }).toList(),
+                          isCurved: true,
+                          color: _primaryColor,
+                          barWidth: 4,
+                          isStrokeCapRound: true,
+                          dotData: FlDotData(
+                            show: true,
+                            getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                              radius: 4,
+                              color: Colors.white,
+                              strokeWidth: 2,
+                              strokeColor: _primaryColor,
+                            ),
+                          ),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            gradient: LinearGradient(
+                              colors: [_primaryColor.withOpacity(0.2), _primaryColor.withOpacity(0)],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                          ),
+                        ),
+                      ],
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (value, meta) {
+                              int index = value.toInt();
+                              if (index >= 0 && index < _dailyStats.length) {
+                                return Text(
+                                  '${_dailyStats[index].date.day}/${_dailyStats[index].date.month}',
+                                  style: TextStyle(fontSize: 10, color: _darkText.withOpacity(0.4), fontWeight: FontWeight.bold),
+                                );
+                              }
+                              return const Text('');
+                            },
+                          ),
+                        ),
+                        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      ),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: _darkText.withOpacity(0.05),
+                          strokeWidth: 1,
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
                     ),
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
-                  gridData: const FlGridData(show: false),
-                  borderData: FlBorderData(show: false),
                 ),
-              ),
         ),
       ],
     );
   }
 
-  Widget _buildChartCard(String title, Widget chart) {
+  Widget _buildArtistAnalytics() {
+    return Consumer<AnalyticsProvider>(
+      builder: (context, provider, child) {
+        if (provider.isLoading) {
+          return const Center(child: CircularProgressIndicator(color: _primaryColor));
+        }
+
+        return Column(
+          children: [
+            Row(
+              children: [
+                _buildMiniSummaryCard('Tổng lượt xem', provider.totalArtistViews.toString(), Colors.blue),
+                const SizedBox(width: 12),
+                _buildMiniSummaryCard('Nghệ sĩ HOT nhất', provider.mostViewedArtist, Colors.orange),
+                const SizedBox(width: 12),
+                _buildMiniSummaryCard('Trung bình', provider.averageViews.toStringAsFixed(0), Colors.purple),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildChartContainer(
+              'Top 10 Nghệ sĩ phổ biến',
+              'Sắp xếp theo tổng lượt nghe',
+              provider.topArtists.isEmpty
+                  ? const _EmptyChart(message: 'Chưa có dữ liệu nghệ sĩ')
+                  : AspectRatio(
+                      aspectRatio: 1.4, // Slightly taller to accommodate avatars
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: provider.topArtists.isNotEmpty ? (provider.topArtists[0]['totalViews'] as int).toDouble() * 1.3 : 20,
+                          barTouchData: BarTouchData(
+                            touchTooltipData: BarTouchTooltipData(
+                              getTooltipColor: (group) => _primaryColor,
+                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                return BarTooltipItem(
+                                  '${provider.topArtists[groupIndex]['name']}\n',
+                                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  children: [
+                                    TextSpan(
+                                      text: '${rod.toY.toInt()} lượt nghe',
+                                      style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w500, fontSize: 12),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          barGroups: provider.topArtists.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final data = entry.value;
+                            
+                            // Rank-based gradients
+                            LinearGradient gradient;
+                            if (index == 0) {
+                              gradient = const LinearGradient(
+                                colors: [Color(0xFFFFD700), Color(0xFFFFA500)], // Gold
+                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                              );
+                            } else if (index == 1) {
+                              gradient = const LinearGradient(
+                                colors: [Color(0xFFC0C0C0), Color(0xFF8E8E8E)], // Silver
+                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                              );
+                            } else if (index == 2) {
+                              gradient = const LinearGradient(
+                                colors: [Color(0xFFCD7F32), Color(0xFF8B4513)], // Bronze
+                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                              );
+                            } else {
+                              gradient = const LinearGradient(
+                                colors: [_primaryColor, _accentColor],
+                                begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                              );
+                            }
+
+                            return BarChartGroupData(
+                              x: index,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: (data['totalViews'] as int).toDouble(),
+                                  gradient: gradient,
+                                  width: 14,
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                                )
+                              ],
+                            );
+                          }).toList(),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 60, // Increased to fit avatar and name
+                                getTitlesWidget: (value, meta) {
+                                  int index = value.toInt();
+                                  if (index >= 0 && index < provider.topArtists.length) {
+                                    final artist = provider.topArtists[index];
+                                    String name = artist['name'] ?? '';
+                                    String? avatarUrl = artist['avatarUrl'];
+
+                                    return SideTitleWidget(
+                                      meta: meta,
+                                      space: 8,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 14,
+                                            backgroundColor: _primaryColor.withOpacity(0.1),
+                                            backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                                                ? NetworkImage(avatarUrl)
+                                                : null,
+                                            child: avatarUrl == null || avatarUrl.isEmpty
+                                                ? const Icon(Icons.person_rounded, size: 14, color: _primaryColor)
+                                                : null,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            name.length > 5 ? '${name.substring(0, 4)}..' : name,
+                                            style: TextStyle(fontSize: 9, color: _darkText.withOpacity(0.5), fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ),
+                            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          ),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            getDrawingHorizontalLine: (value) => FlLine(
+                              color: _darkText.withOpacity(0.05),
+                              strokeWidth: 1,
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMiniSummaryCard(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: _darkText.withOpacity(0.02), blurRadius: 15, offset: const Offset(0, 8))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, 
+              style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(color: _darkText.withOpacity(0.4), fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChartContainer(String title, String subtitle, Widget chart) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _darkText.withOpacity(0.03),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          const SizedBox(height: 20),
-          SizedBox(height: 150, child: chart),
+          Text(title, style: const TextStyle(color: _darkText, fontWeight: FontWeight.w900, fontSize: 16)),
+          Text(subtitle, style: TextStyle(color: _darkText.withOpacity(0.4), fontSize: 12, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 32),
+          chart,
         ],
       ),
     );
@@ -329,7 +683,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: _ManagementCard(
                 icon: Icons.people_rounded,
                 title: 'Người dùng',
-                subtitle: 'Quản lý tài khoản',
                 color: const Color(0xFFDC148C),
                 onTap: () => _navigateTo(const AdminUsersScreen()),
               ),
@@ -339,7 +692,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: _ManagementCard(
                 icon: Icons.music_note_rounded,
                 title: 'Bài hát',
-                subtitle: 'Thêm, sửa, xóa',
                 color: const Color(0xFF1DB954),
                 onTap: () => _navigateTo(const AdminSongsScreen()),
               ),
@@ -353,7 +705,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: _ManagementCard(
                 icon: Icons.person_rounded,
                 title: 'Nghệ sĩ',
-                subtitle: 'Quản lý nghệ sĩ',
                 color: const Color(0xFFE13300),
                 onTap: () => _navigateTo(const AdminArtistsScreen()),
               ),
@@ -363,7 +714,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: _ManagementCard(
                 icon: Icons.album_rounded,
                 title: 'Album',
-                subtitle: 'Quản lý album',
                 color: const Color(0xFF8D67AB),
                 onTap: () => _navigateTo(const AdminAlbumsScreen()),
               ),
@@ -371,42 +721,80 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _ManagementCard(
-          icon: Icons.how_to_reg_rounded,
-          title: 'Đơn đăng ký nghệ sĩ',
-          subtitle: _pendingArtistRequests > 0
-              ? '$_pendingArtistRequests đơn đang chờ duyệt'
-              : 'Xét duyệt người dùng thành nghệ sĩ',
-          color: const Color(0xFFE13300),
-          onTap: () => _navigateTo(const AdminArtistRequestsScreen())
-              .then((_) => _loadData()),
-          fullWidth: true,
-          badgeCount: _pendingArtistRequests,
+        Row(
+          children: [
+            Expanded(
+              child: _ManagementCard(
+                icon: Icons.category_rounded,
+                title: 'Thể loại',
+                color: const Color(0xFF1DB954),
+                onTap: () => _navigateTo(const AdminGenresScreen()),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ManagementCard(
+                icon: Icons.queue_music_rounded,
+                title: 'Playlist',
+                color: const Color(0xFF4A6E78),
+                onTap: () => _navigateTo(const AdminPlaylistsScreen()),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        _ManagementCard(
-          icon: Icons.category_rounded,
-          title: 'Thể loại',
-          subtitle: 'Quản lý danh sách thể loại',
-          color: const Color(0xFF1DB954),
-          onTap: () => _navigateTo(const AdminGenresScreen()),
-          fullWidth: true,
-        ),
-        const SizedBox(height: 12),
-        _ManagementCard(
-          icon: Icons.stars_rounded,
-          title: 'Gói hội viên',
-          subtitle: 'Quản lý các gói Standard, Pro, Premium',
-          color: const Color(0xFFDC148C),
-          onTap: () => _navigateTo(const AdminSubscriptionsScreen()),
-          fullWidth: true,
+        Row(
+          children: [
+            Expanded(
+              child: _ManagementCard(
+                icon: Icons.stars_rounded,
+                title: 'Gói hội viên',
+                color: const Color(0xFFDC148C),
+                onTap: () => _navigateTo(const AdminSubscriptionsScreen()),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ManagementCard(
+                icon: Icons.monetization_on_rounded,
+                title: 'Doanh thu',
+                color: Colors.orange,
+                onTap: () => _navigateTo(AdminRevenueScreen()),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Future<void> _navigateTo(Widget screen) {
-    return Navigator.push(
+  Widget _buildLogoutButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        onPressed: () {
+          context.read<UserProvider>().signOut();
+          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+        },
+        icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+        label: const Text(
+          'Đăng xuất hệ thống',
+          style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.redAccent.withOpacity(0.2)),
+          ),
+          backgroundColor: Colors.redAccent.withOpacity(0.05),
+        ),
+      ),
+    );
+  }
+
+  void _navigateTo(Widget screen) {
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => screen),
     );
@@ -417,49 +805,68 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  final Color color;
+  final List<Color> gradient;
 
   const _StatCard({
     required this.icon,
     required this.label,
     required this.value,
-    required this.color,
+    required this.gradient,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: gradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0A1F1A).withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: gradient.first.withOpacity(0.25),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF0A1F1A),
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+          Positioned(
+            right: -10,
+            bottom: -10,
+            child: Icon(
+              icon,
+              color: Colors.white.withOpacity(0.15),
+              size: 80,
             ),
           ),
-          Text(
-            label,
-            style: TextStyle(
-              color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
-              fontSize: 11,
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -471,107 +878,85 @@ class _StatCard extends StatelessWidget {
 class _ManagementCard extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
   final Color color;
   final VoidCallback onTap;
-  final bool fullWidth;
-  final int badgeCount;
 
   const _ManagementCard({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.color,
     required this.onTap,
-    this.fullWidth = false,
-    this.badgeCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF0A1F1A).withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: const Color(0xFF0A1F1A).withOpacity(0.04),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Row(
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: color, size: 20),
-                ),
-                if (badgeCount > 0)
-                  Positioned(
-                    right: -4,
-                    top: -4,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '$badgeCount',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Color(0xFF0A1F1A),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF0A1F1A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             Icon(
               Icons.chevron_right_rounded,
-              size: 18,
-              color: const Color(0xFF0A1F1A).withValues(alpha: 0.3),
+              size: 20,
+              color: const Color(0xFF0A1F1A).withOpacity(0.2),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyChart extends StatelessWidget {
+  final String message;
+  const _EmptyChart({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 150,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bar_chart_rounded, color: const Color(0xFF0A1F1A).withOpacity(0.05), size: 48),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(color: const Color(0xFF0A1F1A).withOpacity(0.3), fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -581,31 +966,25 @@ class _ManagementCard extends StatelessWidget {
 }
 
 class _AvatarButton extends StatelessWidget {
-  const _AvatarButton({required this.onTap});
-
-  final VoidCallback onTap;
+  const _AvatarButton();
 
   @override
   Widget build(BuildContext context) {
     return Consumer<UserProvider>(
-      builder: (context, userProvider, _) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.2),
-            image: userProvider.photoUrl != null
-                ? DecorationImage(image: NetworkImage(userProvider.photoUrl!), fit: BoxFit.cover)
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: userProvider.photoUrl == null 
-              ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
+      builder: (context, userProvider, _) => Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
+          image: userProvider.photoUrl != null
+              ? DecorationImage(image: NetworkImage(userProvider.photoUrl!), fit: BoxFit.cover)
               : null,
         ),
+        alignment: Alignment.center,
+        child: userProvider.photoUrl == null 
+            ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
+            : null,
       ),
     );
   }

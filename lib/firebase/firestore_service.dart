@@ -426,11 +426,14 @@ class FirestoreService {
     return await getSongsByIds(songIds);
   }
 
-  // Update playlist title
+  // Update playlist
+  static Future<void> updatePlaylist(String playlistId, Map<String, dynamic> data) async {
+    await _db.collection('playlists').doc(playlistId).update(data);
+  }
+
+  // Update playlist title (legacy)
   static Future<void> updatePlaylistTitle(String playlistId, String newTitle) async {
-    await _db.collection('playlists').doc(playlistId).update({
-      'title': newTitle,
-    });
+    await updatePlaylist(playlistId, {'title': newTitle});
   }
 
   // Delete playlist
@@ -864,12 +867,59 @@ class FirestoreService {
     await _db.collection('subscription_packages').doc(id).delete();
   }
 
-  static Future<void> updateUserSubscription(String userId, String packageName) async {
-    await _db.collection('users').doc(userId).update({
+  static Future<void> updateUserSubscription({
+    required String userId, 
+    required String userEmail,
+    required String packageName, 
+    required double price,
+  }) async {
+    final batch = _db.batch();
+    
+    // 1. Update user document
+    final userRef = _db.collection('users').doc(userId);
+    batch.update(userRef, {
       'subscriptionTier': packageName,
       'isPremium': packageName != 'Free' && packageName != 'Standard',
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
     });
+
+    // 2. Create subscription log
+    final logRef = _db.collection('subscription_logs').doc();
+    batch.set(logRef, {
+      'userId': userId,
+      'userEmail': userEmail,
+      'packageName': packageName,
+      'price': price,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
+  static Future<List<Map<String, dynamic>>> getSubscriptionLogs() async {
+    try {
+      final snapshot = await _db.collection('subscription_logs')
+          .orderBy('timestamp', descending: true)
+          .get();
+      return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+    } catch (e) {
+      debugPrint('Error getting logs: $e');
+      return [];
+    }
+  }
+
+  static Future<double> getTotalRevenue() async {
+    try {
+      final snapshot = await _db.collection('subscription_logs').get();
+      double total = 0;
+      for (var doc in snapshot.docs) {
+        total += (doc.data()['price'] as num?)?.toDouble() ?? 0.0;
+      }
+      return total;
+    } catch (e) {
+      debugPrint('Error calculating revenue: $e');
+      return 0.0;
+    }
   }
 
   static Future<String> getUserSubscriptionTier(String userId) async {

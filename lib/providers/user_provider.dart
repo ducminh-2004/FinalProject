@@ -108,10 +108,15 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> upgradeSubscription(String packageName) async {
+  Future<void> upgradeSubscription(String packageName, double price) async {
     if (_userId == null) return;
     try {
-      await FirestoreService.updateUserSubscription(_userId!, packageName);
+      await FirestoreService.updateUserSubscription(
+        userId: _userId!,
+        userEmail: _email ?? 'Unknown',
+        packageName: packageName,
+        price: price,
+      );
       _subscriptionTier = packageName;
       notifyListeners();
     } catch (e) {
