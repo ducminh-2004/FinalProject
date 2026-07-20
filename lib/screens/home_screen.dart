@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../models/album.dart';
 import '../models/artist.dart';
-import '../models/release.dart';
 import '../firebase/firestore_service.dart';
 import '../models/view_model.dart';
 import '../services/view_service.dart';
@@ -13,8 +12,9 @@ import 'now_playing_screen.dart';
 import 'album_detail_screen.dart';
 import 'artist_detail_screen.dart';
 import 'profile_screen.dart';
-import '../providers/user_provider.dart';
 import 'edit_profile_screen.dart';
+import '../models/release.dart';
+import '../providers/user_provider.dart';
 import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -141,7 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // New Releases from followed artists
       List<Song> newReleases = [];
       if (userId != null) {
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
         final followedIds = userProvider.followedArtistIds;
         if (followedIds.isNotEmpty) {
           newReleases = await FirestoreService.getNewReleasesByArtists(followedIds, limit: 10);
@@ -737,61 +736,3 @@ class _ArtistCircle extends StatelessWidget {
   }
 }
 
-class _ReleaseCard extends StatelessWidget {
-  const _ReleaseCard({required this.release});
-
-  final Release release;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 160,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 160,
-            decoration: BoxDecoration(
-              color: release.coverColor,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: release.coverColor.withOpacity(0.25),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.album_rounded,
-                color: Colors.white,
-                size: 56,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            release.type,
-            style: TextStyle(
-              color: _HomeScreenState._darkText.withOpacity(0.55),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            release.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _HomeScreenState._darkText,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

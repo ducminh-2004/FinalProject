@@ -136,8 +136,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         
         if (!mounted) return;
-        
+
         final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
+        if (!mounted) return;
         if (isAdmin) {
           Navigator.of(context).pushReplacementNamed('/admin-dashboard');
         } else {

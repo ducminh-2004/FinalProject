@@ -192,6 +192,7 @@ class _LyricsEditorScreenState extends State<LyricsEditorScreen>
     );
     if (ok == true && mounted) {
       await LyricsService.deleteLyrics(widget.song.id);
+      if (!mounted) return;
       for (final r in _rows) r.dispose();
       setState(() {
         _rows.clear();

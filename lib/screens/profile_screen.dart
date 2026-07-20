@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
@@ -32,11 +33,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Song> _recentSongs = [];
   bool _isLoading = true;
   int _songsPlayed = 0;
+  StreamSubscription<List<ViewRecord>>? _historySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _historySubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -46,34 +54,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    final userId = userProvider.userId!;
+
     try {
-      final playlists = await FirestoreService.getUserPlaylists(userProvider.userId!);
-      final history = await ViewService.getUserHistory(
-        userProvider.userId!,
-        limit: 100,
-      );
-      final recentSongIds = <String>[];
-      for (final record in history) {
-        if (record.targetType == ViewTargetType.song &&
-            !recentSongIds.contains(record.targetId)) {
-          recentSongIds.add(record.targetId);
-        }
-        if (recentSongIds.length == 3) break;
-      }
-      final recentSongs = await FirestoreService.getSongsByIds(recentSongIds);
-      
+      final playlists = await FirestoreService.getUserPlaylists(userId);
       setState(() {
         _playlists = playlists;
-        _recentSongs = recentSongs;
-        _songsPlayed = history
-            .where((record) => record.targetType == ViewTargetType.song)
-            .length;
         _isLoading = false;
       });
     } catch (e) {
       debugPrint('Error loading profile data: $e');
       setState(() => _isLoading = false);
     }
+
+    // Realtime history stream
+    _historySubscription?.cancel();
+    _historySubscription = ViewService.getUserHistoryStream(userId, limit: 50)
+        .listen((history) async {
+      if (!mounted) return;
+      final songRecords = history.where((r) => r.targetType == ViewTargetType.song).toList();
+      final recentSongIds = <String>[];
+      for (final r in songRecords) {
+        if (!recentSongIds.contains(r.targetId)) {
+          recentSongIds.add(r.targetId);
+        }
+        if (recentSongIds.length == 3) break;
+      }
+      final recentSongs = recentSongIds.isNotEmpty
+          ? await FirestoreService.getSongsByIds(recentSongIds)
+          : <Song>[];
+      if (mounted) {
+        setState(() {
+          _recentSongs = recentSongIds
+              .map((id) => recentSongs.firstWhere((s) => s.id == id,
+                  orElse: () => Song(id: id, title: '')))
+              .where((s) => s.title.isNotEmpty)
+              .toList();
+          _songsPlayed = songRecords.length;
+        });
+      }
+    });
   }
 
   static const _mintGreen = Color(0xFF0E6B5A);

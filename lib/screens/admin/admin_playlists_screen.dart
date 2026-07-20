@@ -193,7 +193,8 @@ class _AdminPlaylistsScreenState extends State<AdminPlaylistsScreen> {
               });
             }
             await _loadPlaylists();
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            Navigator.pop(context);
           } catch (e) {
             debugPrint('Error: $e');
           }

@@ -175,7 +175,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   onPlayTap: () async {
                     final songs = await userProvider.getLikedSongs();
                     if (songs.isNotEmpty && mounted) {
+                      // ignore: use_build_context_synchronously
                       context.read<AudioProvider>().playPlaylist(songs, userId: userProvider.userId);
+                      // ignore: use_build_context_synchronously
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => NowPlayingScreen(initialSong: songs.first)),
@@ -285,7 +287,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (songIds.isNotEmpty) {
           final songs = await FirestoreService.getSongsByIds(songIds);
           if (songs.isNotEmpty && mounted) {
+            // ignore: use_build_context_synchronously
             context.read<AudioProvider>().playPlaylist(songs, userId: userProvider.userId);
+            // ignore: use_build_context_synchronously
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => NowPlayingScreen(initialSong: songs.first)),

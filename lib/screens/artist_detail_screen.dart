@@ -3,11 +3,11 @@ import 'package:provider/provider.dart';
 import '../models/artist.dart';
 import '../models/song.dart';
 import '../models/album.dart';
-import '../services/view_service.dart';
-import '../models/view_model.dart';
 import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../extensions/view_extensions.dart';
+import '../services/view_service.dart';
+import '../models/view_model.dart';
 import '../firebase/firestore_service.dart';
 import 'now_playing_screen.dart';
 import 'album_detail_screen.dart';
@@ -25,8 +25,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   List<Song> _artistSongs = [];
   List<Album> _artistAlbums = [];
   bool _isLoading = true;
-  int _totalStreams = 0;
-
   @override
   void initState() {
     super.initState();
@@ -38,8 +36,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
 
   Future<void> _loadArtistContent() async {
     try {
-      final stats = await ViewService.getViewStats(ViewTargetType.artist, widget.artist.id);
-
       final allSongs = await FirestoreService.getSongs(limit: 200);
       final allAlbums = await FirestoreService.getAlbums(limit: 100);
       
@@ -57,7 +53,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         setState(() {
           _artistSongs = songs;
           _artistAlbums = albums;
-          _totalStreams = stats.totalViews;
           _isLoading = false;
         });
       }
@@ -311,61 +306,6 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
     );
   }
 
-  Widget _buildMonthlyStreamCard(Color mintGreen, Color darkText) {
-    final streams = _totalStreams;
-    final formatted = streams >= 1000000
-        ? '${(streams / 1000000).toStringAsFixed(1)} triệu'
-        : streams >= 1000
-            ? '${(streams / 1000).toStringAsFixed(0)} nghìn'
-            : '$streams';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: mintGreen.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: mintGreen.withOpacity(0.1)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: mintGreen.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.trending_up_rounded, color: mintGreen, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    formatted,
-                    style: TextStyle(
-                      color: mintGreen,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    'lượt stream hàng tháng',
-                    style: TextStyle(
-                      color: darkText.withOpacity(0.5),
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildSectionHeader(String title, VoidCallback onSeeAll) {
     return SliverToBoxAdapter(

@@ -196,7 +196,8 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
               await FirestoreService.updateArtist(artist.id, data);
             }
             await _loadArtists();
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            Navigator.pop(context);
           } catch (e) {
             debugPrint('Error: $e');
           }
