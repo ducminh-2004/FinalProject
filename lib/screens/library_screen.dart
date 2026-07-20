@@ -8,7 +8,6 @@ import 'liked_songs_screen.dart';
 import 'artist_detail_screen.dart';
 import 'now_playing_screen.dart';
 import 'user_playlists_screen.dart';
-import 'profile_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -569,33 +568,4 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 }
 
-class _AvatarButton extends StatelessWidget {
-  const _AvatarButton({required this.onTap});
 
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, _) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF0E6B5A),
-            image: userProvider.photoUrl != null
-                ? DecorationImage(image: NetworkImage(userProvider.photoUrl!), fit: BoxFit.cover)
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: userProvider.photoUrl == null 
-              ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
-              : null,
-        ),
-      ),
-    );
-  }
-}

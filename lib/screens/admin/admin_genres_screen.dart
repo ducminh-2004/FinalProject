@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../models/genre.dart';
 import '../../firebase/firestore_service.dart';
-
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../services/cloudinary_service.dart';
-
-const _mintGreen = Color(0xFF0E6B5A);
-const _darkText = Color(0xFF0A1F1A);
 
 class AdminGenresScreen extends StatefulWidget {
   const AdminGenresScreen({super.key});
@@ -19,6 +15,10 @@ class AdminGenresScreen extends StatefulWidget {
 class _AdminGenresScreenState extends State<AdminGenresScreen> {
   List<Genre> _genres = [];
   bool _isLoading = true;
+
+  static const _primaryColor = Color(0xFF0E6B5A);
+  static const _darkText = Color(0xFF0A1F1A);
+  static const _bgColor = Color(0xFFF8FAF9);
 
   @override
   void initState() {
@@ -42,64 +42,68 @@ class _AdminGenresScreenState extends State<AdminGenresScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: _darkText),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _darkText, size: 20),
         ),
         title: const Text(
           'Quản lý thể loại',
-          style: TextStyle(
-            color: _darkText,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(color: _darkText, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5),
         ),
         actions: [
           IconButton(
             onPressed: _loadGenres,
             icon: const Icon(Icons.refresh_rounded, color: _darkText),
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showGenreDialog(context),
-        backgroundColor: _mintGreen,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        backgroundColor: _primaryColor,
+        icon: const Icon(Icons.add_rounded, color: Colors.white),
+        label: const Text('Thêm thể loại', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: _primaryColor))
           : _genres.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.category_outlined,
-                        size: 64,
-                        color: _darkText.withValues(alpha: 0.2),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text('Chưa có thể loại nào'),
-                    ],
+              ? _buildEmptyState()
+              : RefreshIndicator(
+                  onRefresh: _loadGenres,
+                  color: _primaryColor,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                    itemCount: _genres.length,
+                    itemBuilder: (context, index) {
+                      return _GenreTile(
+                        genre: _genres[index],
+                        onEdit: () => _showGenreDialog(context, genre: _genres[index]),
+                        onDelete: () => _deleteGenre(_genres[index]),
+                      );
+                    },
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _genres.length,
-                  itemBuilder: (context, index) {
-                    final genre = _genres[index];
-                    return _GenreTile(
-                      genre: genre,
-                      onEdit: () => _showGenreDialog(context, genre: genre),
-                      onDelete: () => _deleteGenre(genre),
-                    );
-                  },
                 ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.category_rounded, size: 64, color: _darkText.withOpacity(0.05)),
+          const SizedBox(height: 16),
+          Text(
+            'Chưa có thể loại nào',
+            style: TextStyle(color: _darkText.withOpacity(0.3), fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 
@@ -126,17 +130,8 @@ class _AdminGenresScreenState extends State<AdminGenresScreen> {
               });
             }
             await _loadGenres();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(genre == null ? 'Đã thêm thể loại' : 'Đã cập nhật thể loại')),
-              );
-            }
           } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
-              );
-            }
+            debugPrint('Error: $e');
           }
         },
       ),
@@ -147,30 +142,23 @@ class _AdminGenresScreenState extends State<AdminGenresScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xóa thể loại'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Xóa thể loại', style: TextStyle(fontWeight: FontWeight.w900)),
         content: Text('Bạn có chắc muốn xóa thể loại "${genre.name}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
-          TextButton(
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Hủy', style: TextStyle(color: const Color(0xFF0A1F1A).withOpacity(0.4), fontWeight: FontWeight.bold))),
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Xóa'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: const Text('Xóa ngay', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
 
     if (confirmed == true) {
-      try {
-        await FirestoreService.deleteGenre(genre.id);
-        await _loadGenres();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
+      await FirestoreService.deleteGenre(genre.id);
+      await _loadGenres();
     }
   }
 }
@@ -184,234 +172,110 @@ class _GenreTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: genre.color,
-            borderRadius: BorderRadius.circular(8),
-            image: genre.imageUrl != null && genre.imageUrl!.isNotEmpty
-                ? DecorationImage(image: NetworkImage(genre.imageUrl!), fit: BoxFit.cover)
-                : null,
-          ),
-          child: genre.imageUrl == null || genre.imageUrl!.isEmpty
-              ? const Icon(Icons.category_rounded, color: Colors.white)
-              : null,
-        ),
-        title: Text(
-          genre.name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (genre.description != null && genre.description!.isNotEmpty)
-              Text(
-                genre.description!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: const Color(0xFF0A1F1A).withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onEdit,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56, height: 56,
+                    decoration: BoxDecoration(
+                      color: genre.color,
+                      borderRadius: BorderRadius.circular(14),
+                      image: genre.imageUrl != null && genre.imageUrl!.isNotEmpty ? DecorationImage(image: NetworkImage(genre.imageUrl!), fit: BoxFit.cover) : null,
+                    ),
+                    child: genre.imageUrl == null || genre.imageUrl!.isEmpty ? const Icon(Icons.category_rounded, color: Colors.white, size: 24) : null,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(genre.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0A1F1A))),
+                        if (genre.description != null && genre.description!.isNotEmpty)
+                          Text(genre.description!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: const Color(0xFF0A1F1A).withOpacity(0.4), fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ActionButton(icon: Icons.edit_rounded, color: Colors.blueAccent, onTap: onEdit),
+                      const SizedBox(width: 8),
+                      _ActionButton(icon: Icons.delete_outline_rounded, color: Colors.redAccent, onTap: onDelete),
+                    ],
+                  ),
+                ],
               ),
-            Text(
-              'Hex: #${genre.colorValue.toRadixString(16).toUpperCase()}',
-              style: TextStyle(fontSize: 10, color: _darkText.withValues(alpha: 0.5)),
             ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined)),
-            IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline, color: Colors.red)),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
+class _ActionButton extends StatelessWidget {
+  final IconData icon; final Color color; final VoidCallback onTap;
+  const _ActionButton({required this.icon, required this.color, required this.onTap});
+  @override Widget build(BuildContext context) {
+    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(10), child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: color, size: 18)));
+  }
+}
+
 class _GenreDialog extends StatefulWidget {
-  final Genre? genre;
-  final Function(String name, int colorValue, String description, String imageUrl) onSave;
-
+  final Genre? genre; final Function(String name, int colorValue, String description, String imageUrl) onSave;
   const _GenreDialog({this.genre, required this.onSave});
-
-  @override
-  State<_GenreDialog> createState() => _GenreDialogState();
+  @override State<_GenreDialog> createState() => _GenreDialogState();
 }
 
 class _GenreDialogState extends State<_GenreDialog> {
-  late TextEditingController _nameController;
-  late TextEditingController _descriptionController;
-  late int _selectedColor;
-  String? _currentImageUrl;
-  bool _isUploading = false;
-
-  final List<int> _suggestedColors = [
-    0xFF1DB954, // Green
-    0xFFE13300, // Red
-    0xFF8D67AB, // Purple
-    0xFFDC148C, // Pink
-    0xFF006450, // Dark Green
-    0xFF1E3264, // Dark Blue
-    0xFFE8115B, // Rose
-    0xFFF037A5, // Magenta
-    0xFFE91E63, // Pink
-    0xFF2196F3, // Blue
-    0xFF00BCD4, // Cyan
-    0xFF009688, // Teal
-    0xFF4CAF50, // Green
-    0xFF8BC34A, // Light Green
-    0xFFCDDC39, // Lime
-    0xFFFFEB3B, // Yellow
-    0xFFFFC107, // Amber
-    0xFFFF9800, // Orange
-    0xFFFF5722, // Deep Orange
-    0xFF795548, // Brown
-    0xFF9E9E9E, // Grey
-    0xFF607D8B, // Blue Grey
-  ];
-
-  @override
-  void initState() {
+  late TextEditingController _nameController; late TextEditingController _descriptionController; late int _selectedColor; String? _currentImageUrl; bool _isUploading = false;
+  final List<int> _suggestedColors = [0xFF1DB954, 0xFFE13300, 0xFF8D67AB, 0xFFDC148C, 0xFF006450, 0xFF1E3264, 0xFFE8115B, 0xFFF037A5];
+  @override void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.genre?.name ?? '');
     _descriptionController = TextEditingController(text: widget.genre?.description ?? '');
     _selectedColor = widget.genre?.colorValue ?? 0xFF1DB954;
     _currentImageUrl = widget.genre?.imageUrl;
   }
-
   Future<void> _pickAndUploadImage() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    
+    final picker = ImagePicker(); final image = await picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
       setState(() => _isUploading = true);
       try {
         final url = await CloudinaryService.uploadImage(File(image.path));
-        if (url != null) {
-          setState(() => _currentImageUrl = url);
-        }
-      } finally {
-        setState(() => _isUploading = false);
-      }
+        if (url != null) setState(() => _currentImageUrl = url);
+      } finally { setState(() => _isUploading = false); }
     }
   }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  @override Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.genre == null ? 'Thêm thể loại' : 'Sửa thể loại'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Tên thể loại'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Mô tả',
-                hintText: 'Ví dụ: Những bài hát nhẹ nhàng...',
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 20),
-            const Text('Ảnh thể loại:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: _isUploading ? null : _pickAndUploadImage,
-              child: Container(
-                height: 120,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(12),
-                  image: _currentImageUrl != null
-                      ? DecorationImage(image: NetworkImage(_currentImageUrl!), fit: BoxFit.cover)
-                      : null,
-                ),
-                child: _isUploading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _currentImageUrl == null
-                        ? const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add_photo_alternate_rounded, size: 40, color: Colors.grey),
-                              Text('Nhấn để tải ảnh lên', style: TextStyle(color: Colors.grey)),
-                            ],
-                          )
-                        : null,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Chọn màu nền (dự phòng):', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.maxFinite,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _suggestedColors.map((colorVal) {
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedColor = colorVal),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Color(colorVal),
-                        shape: BoxShape.circle,
-                        border: _selectedColor == colorVal
-                            ? Border.all(color: Colors.black, width: 2)
-                            : null,
-                      ),
-                      child: _selectedColor == colorVal
-                          ? const Icon(Icons.check, size: 20, color: Colors.white)
-                          : null,
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      title: Text(widget.genre == null ? 'Thêm thể loại' : 'Sửa thể loại', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _buildField('Tên thể loại', _nameController), const SizedBox(height: 16),
+        _buildField('Mô tả', _descriptionController, maxLines: 2), const SizedBox(height: 24),
+        const Text('Hình ảnh thể loại', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF0A1F1A))), const SizedBox(height: 12),
+        GestureDetector(onTap: _isUploading ? null : _pickAndUploadImage, child: Container(height: 140, width: double.infinity, decoration: BoxDecoration(color: const Color(0xFF0A1F1A).withOpacity(0.03), borderRadius: BorderRadius.circular(20), image: _currentImageUrl != null ? DecorationImage(image: NetworkImage(_currentImageUrl!), fit: BoxFit.cover) : null, border: Border.all(color: const Color(0xFF0A1F1A).withOpacity(0.05))), child: _isUploading ? const Center(child: CircularProgressIndicator(strokeWidth: 2)) : _currentImageUrl == null ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add_photo_alternate_rounded, size: 32, color: const Color(0xFF0A1F1A).withOpacity(0.2)), const SizedBox(height: 8), Text('Tải ảnh lên', style: TextStyle(color: const Color(0xFF0A1F1A).withOpacity(0.3), fontSize: 12, fontWeight: FontWeight.bold))]) : null)),
+        const SizedBox(height: 24),
+        const Text('Màu sắc nhận diện', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF0A1F1A))), const SizedBox(height: 12),
+        Wrap(spacing: 12, runSpacing: 12, children: _suggestedColors.map((colorVal) => GestureDetector(onTap: () => setState(() => _selectedColor = colorVal), child: Container(width: 38, height: 38, decoration: BoxDecoration(color: Color(colorVal), shape: BoxShape.circle, border: _selectedColor == colorVal ? Border.all(color: const Color(0xFF0A1F1A), width: 3) : Border.all(color: Colors.white, width: 2), boxShadow: [if (_selectedColor == colorVal) BoxShadow(color: Color(colorVal).withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]), child: _selectedColor == colorVal ? const Icon(Icons.check, size: 18, color: Colors.white) : null))).toList()),
+      ])),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-        ElevatedButton(
-          onPressed: _isUploading
-              ? null
-              : () {
-                  if (_nameController.text.isNotEmpty) {
-                    widget.onSave(
-                      _nameController.text,
-                      _selectedColor,
-                      _descriptionController.text.trim(),
-                      _currentImageUrl ?? '',
-                    );
-                    Navigator.pop(context);
-                  }
-                },
-          style: ElevatedButton.styleFrom(backgroundColor: _mintGreen, foregroundColor: Colors.white),
-          child: const Text('Lưu'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('Hủy', style: TextStyle(color: const Color(0xFF0A1F1A).withOpacity(0.4), fontWeight: FontWeight.bold))),
+        ElevatedButton(onPressed: _isUploading ? null : () { if (_nameController.text.isNotEmpty) { widget.onSave(_nameController.text, _selectedColor, _descriptionController.text.trim(), _currentImageUrl ?? ''); Navigator.pop(context); } }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0E6B5A), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)), child: const Text('Xác nhận', style: TextStyle(fontWeight: FontWeight.bold))),
       ],
     );
   }
+  Widget _buildField(String label, TextEditingController controller, {int maxLines = 1}) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF0A1F1A))), const SizedBox(height: 8), Container(decoration: BoxDecoration(color: const Color(0xFF0A1F1A).withOpacity(0.03), borderRadius: BorderRadius.circular(16)), child: TextField(controller: controller, maxLines: maxLines, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14))))]);
 }

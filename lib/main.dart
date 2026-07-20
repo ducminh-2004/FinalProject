@@ -14,6 +14,7 @@ import 'screens/admin/admin_dashboard_screen.dart';
 import 'firebase/firebase_service.dart';
 import 'providers/audio_provider.dart';
 import 'providers/user_provider.dart';
+import 'providers/analytics_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AudioProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
       ],
       child: MaterialApp(
         title: 'Spotify',

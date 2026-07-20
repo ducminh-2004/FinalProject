@@ -105,10 +105,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
           _AvatarButton(onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            );
+            final userProvider = context.read<UserProvider>();
+            if (userProvider.isAdmin) {
+              Navigator.pushNamed(context, '/admin-dashboard');
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            }
           }),
           const SizedBox(width: 16),
         ],
