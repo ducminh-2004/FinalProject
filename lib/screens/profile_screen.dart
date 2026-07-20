@@ -16,6 +16,9 @@ import 'edit_profile_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
 import 'artist_register_screen.dart';
 import 'artist_dashboard_screen.dart';
+import 'user_stats_screen.dart';
+import '../theme/app_theme.dart';
+import '../providers/theme_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -82,15 +85,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = userProvider.currentUser;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: context.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F9F8),
-        surfaceTintColor: const Color(0xFFF7F9F8),
+        backgroundColor: context.bg,
+        surfaceTintColor: context.bg,
         elevation: 0,
-        title: const Text(
+        title: Text(
           'Hồ sơ',
           style: TextStyle(
-            color: _darkText,
+            color: context.textPrimary,
             fontSize: 24,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
@@ -288,8 +291,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSectionHeader(String title) {
     return Text(
       title,
-      style: const TextStyle(
-        color: _darkText,
+      style: TextStyle(
+        color: context.textPrimary,
         fontSize: 20,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.2,
@@ -302,7 +305,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return Container(
         height: 180,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(16),
         ),
         child: const Center(
@@ -342,7 +345,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Center(child: Text('Chưa nghe bài nào gần đây')),
@@ -455,11 +458,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildAccountSection(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: _darkText.withValues(alpha: 0.05),
+            color: context.textPrimary.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -467,6 +470,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: Column(
         children: [
+          _AccountTile(
+            icon: Icons.bar_chart_rounded,
+            title: 'Thống kê nghe nhạc',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const UserStatsScreen()),
+              );
+            },
+          ),
+          Divider(height: 1, color: context.divider),
           _AccountTile(
             icon: Icons.person_outline_rounded,
             title: 'Chỉnh sửa hồ sơ',
@@ -607,51 +621,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: _darkText.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => Consumer<ThemeProvider>(
+        builder: (ctx, themeProvider, _) => Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: ctx.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ctx.textPrimary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.dark_mode_outlined),
-              title: const Text('Chế độ tối'),
-              trailing: Switch(
-                value: false,
-                onChanged: (value) {},
-                activeColor: _mintGreen,
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Icon(
+                  themeProvider.isDark ? Icons.dark_mode_rounded : Icons.dark_mode_outlined,
+                  color: ctx.textPrimary,
+                ),
+                title: Text('Chế độ tối', style: TextStyle(color: ctx.textPrimary)),
+                trailing: Switch(
+                  value: themeProvider.isDark,
+                  onChanged: (_) => themeProvider.toggle(),
+                  activeColor: _mintGreen,
+                ),
               ),
-            ),
             ListTile(
-              leading: const Icon(Icons.language_outlined),
-              title: const Text('Ngôn ngữ'),
-              trailing: const Icon(Icons.chevron_right_rounded),
+              leading: Icon(Icons.language_outlined, color: ctx.textPrimary),
+              title: Text('Ngôn ngữ', style: TextStyle(color: ctx.textPrimary)),
+              trailing: Icon(Icons.chevron_right_rounded, color: ctx.iconMuted),
               onTap: () {},
             ),
             ListTile(
-              leading: const Icon(Icons.storage_outlined),
-              title: const Text('Dung lượng'),
-              subtitle: const Text('256 MB đã sử dụng'),
-              trailing: const Icon(Icons.chevron_right_rounded),
+              leading: Icon(Icons.storage_outlined, color: ctx.textPrimary),
+              title: Text('Dung lượng', style: TextStyle(color: ctx.textPrimary)),
+              subtitle: Text('256 MB đã sử dụng', style: TextStyle(color: ctx.textSecondary)),
+              trailing: Icon(Icons.chevron_right_rounded, color: ctx.iconMuted),
               onTap: () {},
             ),
             const SizedBox(height: 20),
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showLogoutDialog(BuildContext context) {
@@ -707,11 +726,11 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0A1F1A).withValues(alpha: 0.05),
+            color: context.textPrimary.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -731,8 +750,8 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
-              color: Color(0xFF0A1F1A),
+            style: TextStyle(
+              color: context.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),
@@ -741,7 +760,7 @@ class _StatCard extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
+              color: context.textSecondary,
               fontSize: 11,
             ),
             textAlign: TextAlign.center,
@@ -766,11 +785,11 @@ class _PlaylistCard extends StatelessWidget {
       child: Container(
         width: 140,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF0A1F1A).withValues(alpha: 0.06),
+              color: context.textPrimary.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 6),
             ),
@@ -808,8 +827,8 @@ class _PlaylistCard extends StatelessWidget {
                     playlist.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF0A1F1A),
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -818,7 +837,7 @@ class _PlaylistCard extends StatelessWidget {
                   Text(
                     '${playlist.songIds.length} bài',
                     style: TextStyle(
-                      color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
+                      color: context.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -840,9 +859,6 @@ class _RecentlyPlayedTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mintGreen = const Color(0xFF0E6B5A);
-    final darkText = const Color(0xFF0A1F1A);
-
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -854,14 +870,14 @@ class _RecentlyPlayedTile extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: mintGreen.withValues(alpha: 0.1),
+                color: const Color(0xFF0E6B5A).withValues(alpha: 0.1),
               ),
               child: song.coverUrl != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(song.coverUrl!, fit: BoxFit.cover),
                     )
-                  : Icon(Icons.music_note_rounded, color: mintGreen.withValues(alpha: 0.7)),
+                  : const Icon(Icons.music_note_rounded, color: Color(0xFF0E6B5A)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -873,7 +889,7 @@ class _RecentlyPlayedTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: darkText,
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -883,7 +899,7 @@ class _RecentlyPlayedTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: darkText.withValues(alpha: 0.5),
+                      color: context.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -892,7 +908,7 @@ class _RecentlyPlayedTile extends StatelessWidget {
             ),
             IconButton(
               onPressed: onTap,
-              icon: Icon(Icons.play_circle_filled_rounded, color: mintGreen, size: 36),
+              icon: const Icon(Icons.play_circle_filled_rounded, color: Color(0xFF0E6B5A), size: 36),
             ),
           ],
         ),
@@ -918,16 +934,16 @@ class _AccountTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       onTap: onTap,
-      leading: Icon(icon, color: textColor ?? const Color(0xFF0A1F1A)),
+      leading: Icon(icon, color: textColor ?? context.textPrimary),
       title: Text(
         title,
         style: TextStyle(
-          color: textColor ?? const Color(0xFF0A1F1A),
+          color: textColor ?? context.textPrimary,
           fontWeight: FontWeight.w500,
         ),
       ),
       trailing: textColor == null
-          ? Icon(Icons.chevron_right_rounded, color: const Color(0xFF0A1F1A).withValues(alpha: 0.3))
+          ? Icon(Icons.chevron_right_rounded, color: context.iconMuted)
           : null,
     );
   }

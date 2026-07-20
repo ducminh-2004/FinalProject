@@ -11,6 +11,7 @@ import 'liked_songs_screen.dart';
 import 'artist_detail_screen.dart';
 import 'now_playing_screen.dart';
 import 'user_playlists_screen.dart';
+import '../theme/app_theme.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -82,15 +83,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: context.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F9F8),
-        surfaceTintColor: const Color(0xFFF7F9F8),
+        backgroundColor: context.bg,
+        surfaceTintColor: context.bg,
         elevation: 0,
-        title: const Text(
+        title: Text(
           'Thư viện',
           style: TextStyle(
-            color: _darkText,
+            color: context.textPrimary,
             fontSize: 24,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
@@ -303,16 +304,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? _mintGreen : _surface,
+          color: isSelected ? _mintGreen : context.surface2,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? _mintGreen : _darkText.withValues(alpha: 0.1),
+            color: isSelected ? _mintGreen : context.divider,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : _darkText,
+            color: isSelected ? Colors.white : context.textPrimary,
             fontSize: 13,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -326,8 +327,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         title,
-        style: const TextStyle(
-          color: _darkText,
+        style: TextStyle(
+          color: context.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.2,
@@ -420,11 +421,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Container(
         width: 120,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: _darkText.withValues(alpha: 0.05),
+              color: context.textPrimary.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -466,8 +467,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _darkText,
+                style: TextStyle(
+                  color: context.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -504,11 +505,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Container(
         height: 72,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: _darkText.withValues(alpha: 0.05),
+              color: context.textPrimary.withValues(alpha: 0.05),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
@@ -542,8 +543,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _darkText,
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -552,7 +553,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: _darkText.withValues(alpha: 0.6),
+                      color: context.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -580,10 +581,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Container(
         height: 56,
         decoration: BoxDecoration(
-          color: _surface,
+          color: context.surface2,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _darkText.withValues(alpha: 0.1),
+            color: context.divider,
             width: 1,
           ),
         ),
@@ -593,24 +594,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: _surface,
+                color: context.surface2,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(15),
                   bottomLeft: Radius.circular(15),
                 ),
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.add_rounded,
                 color: _mintGreen,
                 size: 28,
               ),
             ),
             const SizedBox(width: 14),
-            const Expanded(
+            Expanded(
               child: Text(
                 'Tạo playlist',
                 style: TextStyle(
-                  color: _darkText,
+                  color: context.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -620,7 +621,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               padding: const EdgeInsets.only(right: 16),
               child: Icon(
                 Icons.arrow_forward_ios_rounded,
-                color: _darkText.withValues(alpha: 0.4),
+                color: context.iconMuted,
                 size: 16,
               ),
             ),
@@ -643,11 +644,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Container(
         height: 72,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: _darkText.withValues(alpha: 0.05),
+              color: context.textPrimary.withValues(alpha: 0.05),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
@@ -659,7 +660,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: _surface,
+                color: context.surface2,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(15),
                   bottomLeft: Radius.circular(15),
@@ -681,8 +682,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _darkText,
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -693,7 +694,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: _darkText.withValues(alpha: 0.6),
+                      color: context.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),

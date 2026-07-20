@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'search_screen.dart';
 import 'library_screen.dart';
@@ -20,7 +21,6 @@ class _MainScreenState extends State<MainScreen> {
   int _index = 0;
 
   static const _mintGreen = Color(0xFF0E6B5A);
-  static const _bg = Color(0xFFF7F9F8);
 
   static const _tabs = <Widget>[
     HomeScreen(key: PageStorageKey('home')),
@@ -33,7 +33,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.bg,
       body: IndexedStack(index: _index, children: _tabs),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
@@ -58,8 +58,8 @@ class _MainScreenState extends State<MainScreen> {
           NavigationBar(
             selectedIndex: _index,
             onDestinationSelected: (i) => setState(() => _index = i),
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
+            backgroundColor: context.surface,
+            surfaceTintColor: context.surface,
             elevation: 1,
             indicatorColor: _mintGreen.withValues(alpha: 0.12),
             labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -114,14 +114,14 @@ class _MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final darkText = const Color(0xFF0A1F1A);
+    final darkText = context.textPrimary;
     final mintGreen = const Color(0xFF0E6B5A);
-    final surface = const Color(0xFFF2F4F1);
+    final surface = context.surface2;
 
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: Colors.white,
+        color: context.surface,
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         child: Row(
           children: [

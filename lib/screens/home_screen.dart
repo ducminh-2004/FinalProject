@@ -15,6 +15,7 @@ import 'artist_detail_screen.dart';
 import 'profile_screen.dart';
 import '../providers/user_provider.dart';
 import 'edit_profile_screen.dart';
+import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Song> _popularSongs = [];
   List<Artist> _artists = [];
   List<Album> _albums = [];
+  List<Song> _newReleases = [];
   bool _isLoading = true;
   StreamSubscription<List<ViewRecord>>? _historySubscription;
   String? _historyUserId;
@@ -136,6 +138,20 @@ class _HomeScreenState extends State<HomeScreen> {
         popularSongs = await FirestoreService.getSongs(limit: 10);
       }
 
+      // New Releases from followed artists
+      List<Song> newReleases = [];
+      if (userId != null) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        final followedIds = userProvider.followedArtistIds;
+        if (followedIds.isNotEmpty) {
+          newReleases = await FirestoreService.getNewReleasesByArtists(followedIds, limit: 10);
+        }
+      }
+      if (newReleases.isEmpty) {
+        // Fallback: show latest songs overall
+        newReleases = await FirestoreService.getSongs(limit: 8);
+      }
+
       if (mounted) {
         setState(() {
           // A live user-history stream owns this state when signed in.
@@ -145,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _popularSongs = popularSongs;
           _artists = artists;
           _albums = albums;
+          _newReleases = newReleases;
           _isLoading = false;
         });
       }
@@ -160,7 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const _darkText = Color(0xFF0A1F1A);
   static const _mintGreen = Color(0xFF0E6B5A);
-  static const _lightSurface = Color(0xFFF2F4F1);
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -172,16 +188,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: context.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF7F9F8),
-        surfaceTintColor: const Color(0xFFF7F9F8),
+        backgroundColor: context.bg,
+        surfaceTintColor: context.bg,
         elevation: 0,
         automaticallyImplyLeading: false,
         title: Text(
           _greeting(),
-          style: const TextStyle(
-            color: _darkText,
+          style: TextStyle(
+            color: context.textPrimary,
             fontSize: 24,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
@@ -200,10 +216,10 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: _lightSurface,
+                color: context.surface2,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.notifications_outlined, color: _darkText, size: 20),
+              child: Icon(Icons.notifications_outlined, color: context.textPrimary, size: 20),
             ),
           ),
           const SizedBox(width: 8),
@@ -350,6 +366,40 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                           ),
                   ),
+                  const SizedBox(height: 28),
+                  _SectionTitle('New Releases', onSeeAll: () {}),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 150,
+                    child: _newReleases.isEmpty
+                        ? const Center(child: Text('Chưa có bài hát mới'))
+                        : ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _newReleases.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
+                            itemBuilder: (context, index) {
+                              final item = _newReleases[index];
+                              return _SongCard(
+                                song: item,
+                                onTap: () {
+                                  final audioProvider = context.read<AudioProvider>();
+                                  final userProvider = context.read<UserProvider>();
+                                  audioProvider.playPlaylist(
+                                    _newReleases,
+                                    startIndex: index,
+                                    userId: userProvider.userId,
+                                  );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => NowPlayingScreen(initialSong: item),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             ),
@@ -369,8 +419,8 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            color: _HomeScreenState._darkText,
+          style: TextStyle(
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
@@ -409,11 +459,11 @@ class _SongCard extends StatelessWidget {
       child: Container(
         width: 130,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: _HomeScreenState._darkText.withOpacity(0.06),
+              color: context.textPrimary.withOpacity(0.06),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -437,17 +487,17 @@ class _SongCard extends StatelessWidget {
                             fit: BoxFit.cover,
                             width: double.infinity,
                             alignment: Alignment.center,
-                            errorBuilder: (_, __, ___) => Icon(
+                            errorBuilder: (_, __, ___) => const Icon(
                               Icons.music_note_rounded,
-                              color: _HomeScreenState._mintGreen.withOpacity(0.6),
+                              color: Color(0xFF0E6B5A),
                               size: 36,
                             ),
                           ),
                         ),
                       )
-                    : Icon(
+                    : const Icon(
                         Icons.music_note_rounded,
-                        color: _HomeScreenState._mintGreen.withOpacity(0.6),
+                        color: Color(0xFF0E6B5A),
                         size: 36,
                       ),
               ),
@@ -461,8 +511,8 @@ class _SongCard extends StatelessWidget {
                     song.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _HomeScreenState._darkText,
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
@@ -473,7 +523,7 @@ class _SongCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: _HomeScreenState._darkText.withOpacity(0.6),
+                      color: context.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -502,11 +552,11 @@ class _AlbumCard extends StatelessWidget {
       child: Container(
         width: 160,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: _HomeScreenState._darkText.withOpacity(0.07),
+              color: context.textPrimary.withOpacity(0.07),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -530,17 +580,17 @@ class _AlbumCard extends StatelessWidget {
                             fit: BoxFit.cover,
                             width: double.infinity,
                             alignment: Alignment.center,
-                            errorBuilder: (_, __, ___) => Icon(
+                            errorBuilder: (_, __, ___) => const Icon(
                               Icons.album_rounded,
-                              color: _HomeScreenState._mintGreen.withOpacity(0.6),
+                              color: Color(0xFF0E6B5A),
                               size: 48,
                             ),
                           ),
                         ),
                       )
-                    : Icon(
+                    : const Icon(
                         Icons.album_rounded,
-                        color: _HomeScreenState._mintGreen.withOpacity(0.6),
+                        color: Color(0xFF0E6B5A),
                         size: 48,
                       ),
               ),
@@ -554,8 +604,8 @@ class _AlbumCard extends StatelessWidget {
                     album.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _HomeScreenState._darkText,
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -566,7 +616,7 @@ class _AlbumCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: _HomeScreenState._darkText.withOpacity(0.6),
+                      color: context.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -675,8 +725,8 @@ class _ArtistCircle extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _HomeScreenState._darkText,
+            style: TextStyle(
+              color: context.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),

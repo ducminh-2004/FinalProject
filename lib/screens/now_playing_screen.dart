@@ -552,6 +552,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
 
   void _showSongOptions(BuildContext pageContext, Song song) {
     final userProvider = pageContext.read<UserProvider>();
+    final audio = pageContext.read<AudioProvider>();
 
     showModalBottomSheet(
       context: pageContext,
@@ -564,6 +565,48 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.queue_music_rounded, color: Color(0xFF0E6B5A)),
+              title: const Text('Hàng đợi (Up Next)'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showQueueSheet(pageContext, audio);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.radio_rounded,
+                color: audio.isRadioMode ? const Color(0xFF0E6B5A) : null,
+              ),
+              title: Text(audio.isRadioMode ? 'Radio Mode: BẬT' : 'Radio Mode (tự gợi ý bài)'),
+              onTap: () {
+                audio.toggleRadioMode();
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(pageContext).showSnackBar(
+                  SnackBar(
+                    content: Text(audio.isRadioMode
+                        ? 'Radio Mode đã bật — tự gợi ý bài khi hết playlist'
+                        : 'Radio Mode đã tắt'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.timer_outlined,
+                color: audio.hasSleepTimer ? const Color(0xFF0E6B5A) : null,
+              ),
+              title: Text(
+                audio.hasSleepTimer
+                    ? 'Hẹn giờ tắt: ${_formatDuration(audio.sleepRemaining ?? Duration.zero)}'
+                    : 'Hẹn giờ tắt nhạc',
+              ),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showSleepTimerSheet(pageContext, audio);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.playlist_add_rounded),
               title: const Text('Thêm vào danh sách phát'),
@@ -616,6 +659,152 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showSleepTimerSheet(BuildContext pageContext, AudioProvider audio) {
+    final options = [
+      ('5 phút', const Duration(minutes: 5)),
+      ('10 phút', const Duration(minutes: 10)),
+      ('15 phút', const Duration(minutes: 15)),
+      ('30 phút', const Duration(minutes: 30)),
+      ('1 giờ', const Duration(hours: 1)),
+    ];
+
+    showModalBottomSheet(
+      context: pageContext,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Hẹn giờ tắt nhạc',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (audio.hasSleepTimer)
+              ListTile(
+                leading: const Icon(Icons.cancel_outlined, color: Colors.red),
+                title: Text(
+                  'Hủy hẹn giờ (còn ${_formatDuration(audio.sleepRemaining ?? Duration.zero)})',
+                  style: const TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  audio.cancelSleepTimer();
+                  Navigator.pop(ctx);
+                },
+              ),
+            ...options.map((opt) => ListTile(
+                  leading: const Icon(Icons.timer_rounded, color: Color(0xFF0E6B5A)),
+                  title: Text(opt.$1),
+                  onTap: () {
+                    audio.setSleepTimer(opt.$2);
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(pageContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Nhạc sẽ tắt sau ${opt.$1}'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQueueSheet(BuildContext pageContext, AudioProvider audio) {
+    showModalBottomSheet(
+      context: pageContext,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (ctx, scrollCtrl) {
+          final playlist = audio.playlist;
+          final currentIdx = audio.currentIndex;
+
+          return Column(
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Hàng đợi',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Expanded(
+                child: playlist.isEmpty
+                    ? const Center(child: Text('Hàng đợi trống'))
+                    : ListView.builder(
+                        controller: scrollCtrl,
+                        itemCount: playlist.length,
+                        itemBuilder: (ctx, i) {
+                          final s = playlist[i];
+                          final isCurrent = i == currentIdx;
+                          return ListTile(
+                            selected: isCurrent,
+                            selectedColor: const Color(0xFF0E6B5A),
+                            leading: isCurrent
+                                ? const Icon(Icons.volume_up_rounded,
+                                    color: Color(0xFF0E6B5A))
+                                : Text(
+                                    '${i + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.black38,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                            title: Text(
+                              s.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: isCurrent
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              s.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () {
+                              audio.playPlaylist(playlist, startIndex: i);
+                              Navigator.pop(ctx);
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
