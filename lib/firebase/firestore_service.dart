@@ -238,7 +238,7 @@ class FirestoreService {
       final albums = <Album>[];
       for (final doc in snapshot.docs) {
         final songIds = List<String>.from(doc['songIds'] ?? []);
-        final songs = await _getSongsByIds(songIds);
+        final songs = await getSongsByIds(songIds);
         albums.add(Album(
           id: doc.id,
           title: doc['title'] ?? '',
@@ -260,7 +260,7 @@ class FirestoreService {
     if (!doc.exists) return null;
     
     final songIds = List<String>.from(doc['songIds'] ?? []);
-    final songs = await _getSongsByIds(songIds);
+    final songs = await getSongsByIds(songIds);
     
     return Album(
       id: doc['id'] ?? doc.id,
@@ -351,7 +351,7 @@ class FirestoreService {
   }
 
   // Helper
-  static Future<List<Song>> _getSongsByIds(List<String> ids) async {
+  static Future<List<Song>> getSongsByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     
     final songs = <Song>[];
@@ -365,24 +365,16 @@ class FirestoreService {
 
   // Add song to playlist
   static Future<void> addSongToPlaylist(String playlistId, String songId) async {
-    final playlistRef = _db.collection('playlists').doc(playlistId);
-    final doc = await playlistRef.get();
-    final songIds = List<String>.from(doc['songIds'] ?? []);
-    
-    if (!songIds.contains(songId)) {
-      songIds.add(songId);
-      await playlistRef.update({'songIds': songIds});
-    }
+    await _db.collection('playlists').doc(playlistId).update({
+      'songIds': FieldValue.arrayUnion([songId]),
+    });
   }
 
   // Remove song from playlist
   static Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
-    final playlistRef = _db.collection('playlists').doc(playlistId);
-    final doc = await playlistRef.get();
-    final songIds = List<String>.from(doc['songIds'] ?? []);
-    
-    songIds.remove(songId);
-    await playlistRef.update({'songIds': songIds});
+    await _db.collection('playlists').doc(playlistId).update({
+      'songIds': FieldValue.arrayRemove([songId]),
+    });
   }
 
   // Create new playlist
@@ -415,20 +407,33 @@ class FirestoreService {
     }
   }
 
+  // Keep playlist metadata (including song counts) in sync with Firestore.
+  static Stream<List<Playlist>> watchUserPlaylists(String userId) {
+    return _db
+        .collection('playlists')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Playlist.fromFirestore(doc)).toList());
+  }
+
   // Get songs from playlist
   static Future<List<Song>> getSongsFromPlaylist(String playlistId) async {
     final doc = await _db.collection('playlists').doc(playlistId).get();
     if (!doc.exists) return [];
     
     final songIds = List<String>.from(doc['songIds'] ?? []);
-    return await _getSongsByIds(songIds);
+    return await getSongsByIds(songIds);
   }
 
-  // Update playlist title
+  // Update playlist
+  static Future<void> updatePlaylist(String playlistId, Map<String, dynamic> data) async {
+    await _db.collection('playlists').doc(playlistId).update(data);
+  }
+
+  // Update playlist title (legacy)
   static Future<void> updatePlaylistTitle(String playlistId, String newTitle) async {
-    await _db.collection('playlists').doc(playlistId).update({
-      'title': newTitle,
-    });
+    await updatePlaylist(playlistId, {'title': newTitle});
   }
 
   // Delete playlist
@@ -447,6 +452,24 @@ class FirestoreService {
     } catch (e) {
       debugPrint('Error checking admin: $e');
       return false;
+    }
+  }
+
+  // Get full role status for a user (role, isAdmin, pending artist, artistId)
+  static Future<Map<String, dynamic>> getUserRoleStatus(String userId) async {
+    try {
+      final doc = await _db.collection('users').doc(userId).get();
+      if (!doc.exists) return {'role': 'user'};
+      final data = doc.data() ?? {};
+      return {
+        'role': data['role'] ?? 'user',
+        'isAdmin': data['isAdmin'] == true,
+        'isPendingArtist': data['isPendingArtist'] == true,
+        'artistId': data['artistId'],
+      };
+    } catch (e) {
+      debugPrint('Error getting role status: $e');
+      return {'role': 'user'};
     }
   }
 
@@ -571,6 +594,7 @@ class FirestoreService {
     String? artistId,
     String? coverUrl,
     List<String>? songIds,
+    String? releaseYear,
   }) async {
     final docRef = await _db.collection('albums').add({
       'title': title,
@@ -578,9 +602,48 @@ class FirestoreService {
       'artistId': artistId,
       'coverUrl': coverUrl ?? '',
       'songIds': songIds ?? [],
+      'releaseYear': releaseYear,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return docRef.id;
+  }
+
+  // Create an album together with a batch of new songs.
+  // Each song map: {title, coverUrl, audioUrl, genres}. Returns album id.
+  static Future<String> createAlbumWithSongs({
+    required String title,
+    required String artist,
+    String? artistId,
+    String? coverUrl,
+    String? releaseYear,
+    required List<Map<String, dynamic>> songs,
+  }) async {
+    final List<String> artistsList = [artist];
+    final List<String> artistIds = artistId != null ? [artistId] : [];
+
+    final songIds = <String>[];
+    for (final s in songs) {
+      final songId = await createSong(
+        title: s['title'] as String? ?? '',
+        artists: artistsList,
+        artistIds: artistIds,
+        coverUrl: (s['coverUrl'] as String?)?.isNotEmpty == true
+            ? s['coverUrl'] as String
+            : coverUrl,
+        audioUrl: s['audioUrl'] as String?,
+        genres: (s['genres'] as List?)?.cast<String>() ?? [],
+      );
+      songIds.add(songId);
+    }
+
+    return createAlbum(
+      title: title,
+      artist: artist,
+      artistId: artistId,
+      coverUrl: coverUrl,
+      songIds: songIds,
+      releaseYear: releaseYear,
+    );
   }
 
   // Update album
@@ -621,6 +684,140 @@ class FirestoreService {
   // Delete genre
   static Future<void> deleteGenre(String genreId) async {
     await _db.collection('genres').doc(genreId).delete();
+  }
+
+  // ==================== ARTIST REGISTRATION ====================
+
+  // User submits a request to become an artist
+  static Future<void> submitArtistRequest({
+    required String userId,
+    required String artistName,
+    String? bio,
+    String? avatarUrl,
+    List<String>? genres,
+    String? socialLinks,
+    String? sampleTrackUrl,
+  }) async {
+    final requestRef = _db.collection('artist_requests').doc(userId);
+    await requestRef.set({
+      'userId': userId,
+      'artistName': artistName,
+      'bio': bio ?? '',
+      'avatarUrl': avatarUrl ?? '',
+      'genres': genres ?? [],
+      'socialLinks': socialLinks ?? '',
+      'sampleTrackUrl': sampleTrackUrl ?? '',
+      'status': 'pending',
+      'adminNote': '',
+      'createdAt': FieldValue.serverTimestamp(),
+      'reviewedAt': null,
+    });
+
+    await _db.collection('users').doc(userId).update({
+      'isPendingArtist': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Get artist requests, optionally filtered by status
+  static Future<List<Map<String, dynamic>>> getArtistRequests({String? status}) async {
+    try {
+      Query query = _db.collection('artist_requests');
+      if (status != null) {
+        query = query.where('status', isEqualTo: status);
+      }
+      final snapshot = await query.get();
+      final requests = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+      requests.sort((a, b) {
+        final aTime = a['createdAt'];
+        final bTime = b['createdAt'];
+        if (aTime is Timestamp && bTime is Timestamp) {
+          return bTime.compareTo(aTime);
+        }
+        return 0;
+      });
+      return requests;
+    } catch (e) {
+      debugPrint('Error getting artist requests: $e');
+      return [];
+    }
+  }
+
+  // Count pending artist requests (for admin dashboard badge)
+  static Future<int> getPendingArtistRequestCount() async {
+    try {
+      final snapshot = await _db
+          .collection('artist_requests')
+          .where('status', isEqualTo: 'pending')
+          .get();
+      return snapshot.size;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // Approve an artist request: create artist doc + promote user
+  static Future<String> approveArtistRequest(Map<String, dynamic> request) async {
+    final userId = request['userId'] as String;
+
+    final artistRef = await _db.collection('artists').add({
+      'name': request['artistName'] ?? '',
+      'avatarUrl': request['avatarUrl'] ?? '',
+      'bio': request['bio'] ?? '',
+      'genres': request['genres'] ?? [],
+      'socialLinks': request['socialLinks'] ?? '',
+      'monthlyListeners': 0,
+      'followerCount': 0,
+      'isVerified': false,
+      'linkedUserId': userId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await _db.collection('users').doc(userId).update({
+      'role': 'artist',
+      'artistId': artistRef.id,
+      'isPendingArtist': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await _db.collection('artist_requests').doc(userId).update({
+      'status': 'approved',
+      'artistId': artistRef.id,
+      'reviewedAt': FieldValue.serverTimestamp(),
+    });
+
+    return artistRef.id;
+  }
+
+  // Reject an artist request
+  static Future<void> rejectArtistRequest(String userId, String note) async {
+    await _db.collection('artist_requests').doc(userId).update({
+      'status': 'rejected',
+      'adminNote': note,
+      'reviewedAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('users').doc(userId).update({
+      'isPendingArtist': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Get songs uploaded by a specific artist (by artistId)
+  static Future<List<Song>> getSongsByArtistId(String artistId) async {
+    try {
+      final snapshot = await _db
+          .collection('songs')
+          .where('artistIds', arrayContains: artistId)
+          .get();
+      return snapshot.docs.map((doc) => Song.fromFirestore(doc)).toList();
+    } catch (e) {
+      debugPrint('Error getting songs by artist: $e');
+      return [];
+    }
   }
 
   // ==================== ADMIN: STATS ====================
@@ -670,12 +867,59 @@ class FirestoreService {
     await _db.collection('subscription_packages').doc(id).delete();
   }
 
-  static Future<void> updateUserSubscription(String userId, String packageName) async {
-    await _db.collection('users').doc(userId).update({
+  static Future<void> updateUserSubscription({
+    required String userId, 
+    required String userEmail,
+    required String packageName, 
+    required double price,
+  }) async {
+    final batch = _db.batch();
+    
+    // 1. Update user document
+    final userRef = _db.collection('users').doc(userId);
+    batch.update(userRef, {
       'subscriptionTier': packageName,
       'isPremium': packageName != 'Free' && packageName != 'Standard',
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
     });
+
+    // 2. Create subscription log
+    final logRef = _db.collection('subscription_logs').doc();
+    batch.set(logRef, {
+      'userId': userId,
+      'userEmail': userEmail,
+      'packageName': packageName,
+      'price': price,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
+  static Future<List<Map<String, dynamic>>> getSubscriptionLogs() async {
+    try {
+      final snapshot = await _db.collection('subscription_logs')
+          .orderBy('timestamp', descending: true)
+          .get();
+      return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+    } catch (e) {
+      debugPrint('Error getting logs: $e');
+      return [];
+    }
+  }
+
+  static Future<double> getTotalRevenue() async {
+    try {
+      final snapshot = await _db.collection('subscription_logs').get();
+      double total = 0;
+      for (var doc in snapshot.docs) {
+        total += (doc.data()['price'] as num?)?.toDouble() ?? 0.0;
+      }
+      return total;
+    } catch (e) {
+      debugPrint('Error calculating revenue: $e');
+      return 0.0;
+    }
   }
 
   static Future<String> getUserSubscriptionTier(String userId) async {

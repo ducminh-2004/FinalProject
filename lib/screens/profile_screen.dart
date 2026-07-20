@@ -5,6 +5,8 @@ import '../models/song.dart';
 import '../providers/user_provider.dart';
 import '../providers/audio_provider.dart';
 import '../firebase/firestore_service.dart';
+import '../services/view_service.dart';
+import '../models/view_model.dart';
 import 'now_playing_screen.dart';
 import '../firebase/auth_service.dart';
 import 'login_screen.dart';
@@ -12,6 +14,8 @@ import 'liked_songs_screen.dart';
 import 'user_playlists_screen.dart';
 import 'edit_profile_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
+import 'artist_register_screen.dart';
+import 'artist_dashboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -41,12 +45,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       final playlists = await FirestoreService.getUserPlaylists(userProvider.userId!);
-      final songs = await FirestoreService.getSongs(limit: 50);
+      final history = await ViewService.getUserHistory(
+        userProvider.userId!,
+        limit: 100,
+      );
+      final recentSongIds = <String>[];
+      for (final record in history) {
+        if (record.targetType == ViewTargetType.song &&
+            !recentSongIds.contains(record.targetId)) {
+          recentSongIds.add(record.targetId);
+        }
+        if (recentSongIds.length == 3) break;
+      }
+      final recentSongs = await FirestoreService.getSongsByIds(recentSongIds);
       
       setState(() {
         _playlists = playlists;
-        _recentSongs = songs.take(3).toList();
-        _songsPlayed = songs.length;
+        _recentSongs = recentSongs;
+        _songsPlayed = history
+            .where((record) => record.targetType == ViewTargetType.song)
+            .length;
         _isLoading = false;
       });
     } catch (e) {
@@ -504,6 +522,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'Trợ giúp',
             onTap: () {},
           ),
+          ..._buildArtistTiles(context),
           if (context.watch<UserProvider>().isAdmin) ...[
             Divider(height: 1, color: _darkText.withValues(alpha: 0.05)),
             _AccountTile(
@@ -529,6 +548,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  List<Widget> _buildArtistTiles(BuildContext context) {
+    final userProvider = context.watch<UserProvider>();
+    // Admin has their own panel; skip artist tiles for admins.
+    if (userProvider.isAdmin) return [];
+
+    final divider = Divider(height: 1, color: _darkText.withValues(alpha: 0.05));
+
+    if (userProvider.isArtist) {
+      return [
+        divider,
+        _AccountTile(
+          icon: Icons.mic_external_on_rounded,
+          title: 'Trang nghệ sĩ',
+          textColor: _mintGreen,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ArtistDashboardScreen()),
+            );
+          },
+        ),
+      ];
+    }
+
+    if (userProvider.isPendingArtist) {
+      return [
+        divider,
+        const _AccountTile(
+          icon: Icons.hourglass_top_rounded,
+          title: 'Đơn nghệ sĩ đang chờ duyệt',
+          textColor: Color(0xFFB8860B),
+          onTap: _noop,
+        ),
+      ];
+    }
+
+    return [
+      divider,
+      _AccountTile(
+        icon: Icons.star_outline_rounded,
+        title: 'Trở thành nghệ sĩ',
+        textColor: _mintGreen,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ArtistRegisterScreen()),
+          );
+        },
+      ),
+    ];
+  }
+
+  static void _noop() {}
 
   void _showSettingsBottomSheet(BuildContext context) {
     showModalBottomSheet(

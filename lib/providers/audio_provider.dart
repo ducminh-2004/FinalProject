@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/song.dart';
 import '../extensions/view_extensions.dart';
 
@@ -18,6 +20,9 @@ class AudioProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   PlayerState _playerState = PlayerState.stopped;
+
+  // Fallback timer — polls position when onPositionChanged stream misses ticks
+  Timer? _positionTimer;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -54,18 +59,22 @@ class AudioProvider extends ChangeNotifier {
         case PlayerState.playing:
           _isPlaying = true;
           _playerState = PlayerState.playing;
+          _startPositionTimer();
           break;
         case PlayerState.paused:
           _isPlaying = false;
           _playerState = PlayerState.paused;
+          _stopPositionTimer();
           break;
         case PlayerState.stopped:
           _isPlaying = false;
           _playerState = PlayerState.stopped;
+          _stopPositionTimer();
           break;
         case PlayerState.completed:
           _isPlaying = false;
           _playerState = PlayerState.completed;
+          _stopPositionTimer();
           _onSongComplete();
           break;
         default:
@@ -80,6 +89,23 @@ class AudioProvider extends ChangeNotifier {
     });
   }
 
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (!_isPlaying) return;
+      final pos = await _audioPlayer.getCurrentPosition();
+      if (pos != null && (pos - _position).abs() > const Duration(milliseconds: 100)) {
+        _position = pos;
+        notifyListeners();
+      }
+    });
+  }
+
+  void _stopPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
+  }
+
   void _onSongComplete() {
     if (_isRepeat) {
       playSong(_currentSong!, restart: true);
@@ -89,7 +115,7 @@ class AudioProvider extends ChangeNotifier {
   }
 
   // Play a single song
-  Future<void> playSong(Song song, {bool restart = false}) async {
+  Future<void> playSong(Song song, {bool restart = false, String? userId}) async {
     if (song.audioUrl == null || song.audioUrl!.isEmpty) return;
 
     // Nếu là bài hiện tại và đang phát, không restart
@@ -103,7 +129,13 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
 
     // Track song view
-    song.id.trackSongView(durationSeconds: 0);
+    // Always associate the history entry with the signed-in user. Most callers
+    // do not have to (and previously did not) pass a userId explicitly.
+    final effectiveUserId = userId ?? FirebaseAuth.instance.currentUser?.uid;
+    song.id.trackSongView(
+      userId: effectiveUserId,
+      durationSeconds: 0,
+    );
 
     if (!restart) {
       // Check if song is already in playlist
@@ -118,7 +150,7 @@ class AudioProvider extends ChangeNotifier {
   }
 
   // Play a playlist from specific index
-  Future<void> playPlaylist(List<Song> songs, {int startIndex = 0}) async {
+  Future<void> playPlaylist(List<Song> songs, {int startIndex = 0, String? userId}) async {
     if (songs.isEmpty) return;
 
     _playlist = _isShuffle ? (List.from(songs)..shuffle()) : List.from(songs);
@@ -131,7 +163,7 @@ class AudioProvider extends ChangeNotifier {
       _currentIndex = 0;
     }
 
-    await playSong(_playlist[_currentIndex]);
+    await playSong(_playlist[_currentIndex], userId: userId);
   }
 
   // Resume/Pause
@@ -249,6 +281,7 @@ class AudioProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopPositionTimer();
     _audioPlayer.dispose();
     super.dispose();
   }

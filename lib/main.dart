@@ -11,9 +11,13 @@ import 'screens/liked_songs_screen.dart';
 import 'screens/artist_detail_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/artist_register_screen.dart';
+import 'screens/artist_dashboard_screen.dart';
 import 'firebase/firebase_service.dart';
 import 'providers/audio_provider.dart';
 import 'providers/user_provider.dart';
+import 'providers/analytics_provider.dart';
+import 'providers/lyrics_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +35,8 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AudioProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => LyricsProvider()),
       ],
       child: MaterialApp(
         title: 'Spotify',
@@ -44,6 +50,8 @@ class MyApp extends StatelessWidget {
           '/main': (_) => const MainScreen(),
           '/library': (_) => const LibraryScreen(),
           '/admin-dashboard': (_) => const AdminDashboardScreen(),
+          '/artist-register': (_) => const ArtistRegisterScreen(),
+          '/artist-dashboard': (_) => const ArtistDashboardScreen(),
           '/now-playing': (_) => const NowPlayingScreen(),
           '/liked-songs': (_) => const LikedSongsScreen(),
         },

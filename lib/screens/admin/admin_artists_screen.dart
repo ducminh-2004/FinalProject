@@ -5,9 +5,6 @@ import '../../services/cloudinary_service.dart';
 import '../../models/artist.dart';
 import '../../firebase/firestore_service.dart';
 
-const _mintGreen = Color(0xFF0E6B5A);
-const _darkText = Color(0xFF0A1F1A);
-
 class AdminArtistsScreen extends StatefulWidget {
   const AdminArtistsScreen({super.key});
 
@@ -19,6 +16,11 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
   List<Artist> _artists = [];
   bool _isLoading = true;
   String _searchQuery = '';
+
+  static const _primaryColor = Color(0xFF0E6B5A);
+  static const _accentColor = Color(0xFFE13300);
+  static const _darkText = Color(0xFF0A1F1A);
+  static const _bgColor = Color(0xFFF8FAF9);
 
   @override
   void initState() {
@@ -49,107 +51,47 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F8),
+      backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: _darkText),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _darkText, size: 20),
         ),
         title: const Text(
           'Quản lý nghệ sĩ',
-          style: TextStyle(
-            color: _darkText,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(color: _darkText, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5),
         ),
         actions: [
           IconButton(
             onPressed: _loadArtists,
             icon: const Icon(Icons.refresh_rounded, color: _darkText),
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showArtistDialog(context),
-        backgroundColor: const Color(0xFFE13300),
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        backgroundColor: _accentColor,
+        icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+        label: const Text('Thêm nghệ sĩ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: Column(
         children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (value) => setState(() => _searchQuery = value),
-              decoration: InputDecoration(
-                hintText: 'Tìm kiếm nghệ sĩ...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
-          ),
-
-          // Stats
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _StatChip(
-                  label: 'Tổng nghệ sĩ',
-                  value: _artists.length.toString(),
-                  color: const Color(0xFFE13300),
-                ),
-                const SizedBox(width: 8),
-                _StatChip(
-                  label: 'Đã xác minh',
-                  value: _artists.where((a) => a.isVerified ?? false).length.toString(),
-                  color: Colors.blue,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Artist list
+          _buildSearchBar(),
+          _buildStatsRow(),
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator(color: _primaryColor))
                 : _filteredArtists.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.person_off_rounded,
-                              size: 64,
-                              color: _darkText.withValues(alpha: 0.2),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Không tìm thấy nghệ sĩ',
-                              style: TextStyle(
-                                color: _darkText.withValues(alpha: 0.5),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: _loadArtists,
+                        color: _primaryColor,
                         child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                           itemCount: _filteredArtists.length,
                           itemBuilder: (context, index) {
                             return _ArtistTile(
@@ -161,6 +103,73 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
                           },
                         ),
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: _darkText.withOpacity(0.04),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextField(
+          onChanged: (value) => setState(() => _searchQuery = value),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            hintText: 'Tìm kiếm tên nghệ sĩ...',
+            hintStyle: TextStyle(color: _darkText.withOpacity(0.3), fontSize: 14),
+            prefixIcon: Icon(Icons.search_rounded, color: _darkText.withOpacity(0.3), size: 20),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Row(
+        children: [
+          _StatBadge(
+            label: 'Tổng số',
+            value: _artists.length.toString(),
+            color: _primaryColor,
+          ),
+          const SizedBox(width: 8),
+          _StatBadge(
+            label: 'Đã xác minh',
+            value: _artists.where((a) => a.isVerified ?? false).length.toString(),
+            color: Colors.blueAccent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_search_rounded, size: 64, color: _darkText.withOpacity(0.05)),
+          const SizedBox(height: 16),
+          Text(
+            'Không tìm thấy nghệ sĩ nào',
+            style: TextStyle(color: _darkText.withOpacity(0.3), fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -187,25 +196,9 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
               await FirestoreService.updateArtist(artist.id, data);
             }
             await _loadArtists();
-            if (mounted) {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(artist == null ? 'Đã thêm nghệ sĩ' : 'Đã cập nhật nghệ sĩ'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
+            if (mounted) Navigator.pop(context);
           } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Lỗi: $e'),
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: const Color(0xFFE13300),
-                ),
-              );
-            }
+            debugPrint('Error: $e');
           }
         },
       ),
@@ -216,123 +209,68 @@ class _AdminArtistsScreenState extends State<AdminArtistsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_rounded, color: Color(0xFFE13300)),
-            SizedBox(width: 8),
-            Text('Xóa nghệ sĩ'),
-          ],
-        ),
-        content: Text('Bạn có chắc muốn xóa nghệ sĩ "${artist.name}"?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Xóa nghệ sĩ', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Text('Hành động này sẽ xóa vĩnh viễn nghệ sĩ "${artist.name}" khỏi hệ thống.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            child: Text('Hủy', style: TextStyle(color: _darkText.withOpacity(0.4), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE13300),
+              backgroundColor: _accentColor,
               foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Xóa'),
+            child: const Text('Xóa ngay', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
-
     if (confirmed == true) {
-      try {
-        await FirestoreService.deleteArtist(artist.id);
-        await _loadArtists();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đã xóa nghệ sĩ'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Lỗi: $e'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFFE13300),
-            ),
-          );
-        }
-      }
+      await FirestoreService.deleteArtist(artist.id);
+      _loadArtists();
     }
   }
 
   Future<void> _toggleVerify(Artist artist) async {
-    try {
-      await FirestoreService.updateArtist(artist.id, {
-        'isVerified': !(artist.isVerified ?? false),
-      });
-      await _loadArtists();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text((artist.isVerified ?? false) ? 'Đã hủy xác minh' : 'Đã xác minh nghệ sĩ'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFE13300),
-          ),
-        );
-      }
-    }
+    await FirestoreService.updateArtist(artist.id, {
+      'isVerified': !(artist.isVerified ?? false),
+    });
+    _loadArtists();
   }
 }
 
-class _StatChip extends StatelessWidget {
+class _StatBadge extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
 
-  const _StatChip({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
+  const _StatBadge({required this.label, required this.value, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.1)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
-            style: TextStyle(
-              color: color,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 13),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
-              color: color.withValues(alpha: 0.7),
-              fontSize: 12,
-            ),
+            style: TextStyle(color: color.withOpacity(0.7), fontWeight: FontWeight.w600, fontSize: 11),
           ),
         ],
       ),
@@ -353,166 +291,131 @@ class _ArtistTile extends StatelessWidget {
     required this.onToggleVerify,
   });
 
-  String _formatNumber(int? number) {
-    if (number == null) return '0';
-    if (number >= 1000000) return '${(number / 1000000).toStringAsFixed(1)}M';
-    if (number >= 1000) return '${(number / 1000).toStringAsFixed(1)}K';
-    return number.toString();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            // Avatar
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: const Color(0xFFE13300).withValues(alpha: 0.1),
-              backgroundImage: artist.avatarUrl != null
-                  ? NetworkImage(artist.avatarUrl!)
-                  : null,
-              child: artist.avatarUrl == null
-                  ? Text(
-                      artist.name[0].toUpperCase(),
-                      style: const TextStyle(
-                        color: Color(0xFFE13300),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 24,
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0A1F1A).withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onEdit,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Row(
+                  Stack(
                     children: [
-                      Flexible(
-                        child: Text(
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF0E6B5A).withOpacity(0.05),
+                          image: artist.avatarUrl != null
+                              ? DecorationImage(image: NetworkImage(artist.avatarUrl!), fit: BoxFit.cover)
+                              : null,
+                        ),
+                        child: artist.avatarUrl == null
+                            ? const Icon(Icons.person_rounded, color: Color(0xFF0E6B5A), size: 32)
+                            : null,
+                      ),
+                      if (artist.isVerified ?? false)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                            child: const Icon(Icons.verified_rounded, color: Colors.blueAccent, size: 18),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           artist.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Color(0xFF0A1F1A),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      ),
-                      if (artist.isVerified ?? false) ...[
-                        const SizedBox(width: 6),
-                        const Icon(
-                          Icons.verified_rounded,
-                          color: Colors.blue,
-                          size: 18,
+                        const SizedBox(height: 4),
+                        Text(
+                          '${artist.monthlyListeners ?? 0} người nghe hàng tháng',
+                          style: TextStyle(
+                            color: const Color(0xFF0A1F1A).withOpacity(0.4),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.headphones_rounded,
-                        size: 14,
-                        color: const Color(0xFF0A1F1A).withValues(alpha: 0.4),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${_formatNumber(artist.monthlyListeners)} người nghe/tháng',
-                        style: TextStyle(
-                          color: const Color(0xFF0A1F1A).withValues(alpha: 0.4),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if ((artist.genres ?? []).isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 4,
-                      children: (artist.genres ?? []).take(2).map((g) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE13300).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          g,
-                          style: const TextStyle(
-                            color: Color(0xFFE13300),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      )).toList(),
                     ),
-                  ],
+                  ),
+                  PopupMenuButton<String>(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    icon: Icon(Icons.more_vert_rounded, color: const Color(0xFF0A1F1A).withOpacity(0.3)),
+                    onSelected: (val) {
+                      if (val == 'edit') onEdit();
+                      if (val == 'verify') onToggleVerify();
+                      if (val == 'delete') onDelete();
+                    },
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(value: 'edit', child: _PopupItem(icon: Icons.edit_rounded, label: 'Chỉnh sửa')),
+                      PopupMenuItem(
+                        value: 'verify',
+                        child: _PopupItem(
+                          icon: (artist.isVerified ?? false) ? Icons.verified_user_outlined : Icons.verified_user_rounded,
+                          label: (artist.isVerified ?? false) ? 'Hủy xác minh' : 'Xác minh',
+                        ),
+                      ),
+                      const PopupMenuItem(value: 'delete', child: _PopupItem(icon: Icons.delete_outline_rounded, label: 'Xóa', color: Colors.redAccent)),
+                    ],
+                  ),
                 ],
               ),
             ),
-
-            // Actions
-            PopupMenuButton<String>(
-              icon: Icon(
-                Icons.more_vert_rounded,
-                color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
-              ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              onSelected: (value) {
-                if (value == 'edit') onEdit();
-                if (value == 'verify') onToggleVerify();
-                if (value == 'delete') onDelete();
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, size: 20),
-                      SizedBox(width: 8),
-                      Text('Sửa'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'verify',
-                  child: Row(
-                    children: [
-                      Icon(
-                        (artist.isVerified ?? false) ? Icons.remove_moderator : Icons.verified_rounded,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text((artist.isVerified ?? false) ? 'Hủy xác minh' : 'Xác minh'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_outline, size: 20, color: Color(0xFFE13300)),
-                      SizedBox(width: 8),
-                      Text('Xóa', style: TextStyle(color: Color(0xFFE13300))),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _PopupItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+
+  const _PopupItem({required this.icon, required this.label, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color ?? const Color(0xFF0A1F1A).withOpacity(0.7)),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+      ],
     );
   }
 }
@@ -529,20 +432,18 @@ class _ArtistFormSheet extends StatefulWidget {
 
 class _ArtistFormSheetState extends State<_ArtistFormSheet> {
   late TextEditingController _nameController;
-  String? _avatarUrl;
   late TextEditingController _bioController;
   late TextEditingController _genresController;
+  String? _avatarUrl;
   bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.artist?.name ?? '');
-    _avatarUrl = widget.artist?.avatarUrl;
     _bioController = TextEditingController(text: widget.artist?.bio ?? '');
-    _genresController = TextEditingController(
-      text: (widget.artist?.genres ?? []).join(', ') ?? '',
-    );
+    _genresController = TextEditingController(text: (widget.artist?.genres ?? []).join(', '));
+    _avatarUrl = widget.artist?.avatarUrl;
   }
 
   Future<void> _pickImage() async {
@@ -557,93 +458,97 @@ class _ArtistFormSheetState extends State<_ArtistFormSheet> {
   }
 
   @override
-  void dispose() {
-    _nameController.dispose();
-    _bioController.dispose();
-    _genresController.dispose();
-    super.dispose();
-  }
-
-
-  @override
   Widget build(BuildContext context) {
-    final isEditing = widget.artist != null;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, bottomInset + 32),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.artist == null ? 'Thêm nghệ sĩ mới' : 'Chỉnh sửa nghệ sĩ',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF0A1F1A)),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close_rounded, color: const Color(0xFF0A1F1A).withOpacity(0.3)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
             Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A1F1A).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF0A1F1A).withOpacity(0.03),
+                        image: _avatarUrl != null ? DecorationImage(image: NetworkImage(_avatarUrl!), fit: BoxFit.cover) : null,
+                        border: Border.all(color: const Color(0xFF0A1F1A).withOpacity(0.05), width: 2),
+                      ),
+                      child: _avatarUrl == null && !_isUploading
+                          ? Icon(Icons.add_a_photo_outlined, color: const Color(0xFF0A1F1A).withOpacity(0.2), size: 32)
+                          : _isUploading 
+                              ? const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(strokeWidth: 2)) 
+                              : null,
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(color: Color(0xFF0E6B5A), shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              isEditing ? 'Sửa nghệ sĩ' : 'Thêm nghệ sĩ mới',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0A1F1A),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            _buildTextField('Tên nghệ sĩ', _nameController, isRequired: true),
-            const SizedBox(height: 12),
-            const Text('Avatar nghệ sĩ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            const SizedBox(height: 8),
-            GestureDetector(
-              onTap: _isUploading ? null : _pickImage,
-              child: CircleAvatar(
-                radius: 50,
-                backgroundColor: Colors.grey[100],
-                backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
-                child: _isUploading 
-                    ? const CircularProgressIndicator() 
-                    : _avatarUrl == null ? const Icon(Icons.add_a_photo_rounded, color: Colors.grey) : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildTextField('Tiểu sử', _bioController, maxLines: 3),
-            const SizedBox(height: 12),
-            _buildTextField('Thể loại (phân cách bằng dấu phẩy)', _genresController),
-
-            const SizedBox(height: 24),
-
+            
+            const SizedBox(height: 32),
+            _buildField('Tên nghệ sĩ', _nameController, Icons.person_rounded),
+            const SizedBox(height: 16),
+            _buildField('Thể loại (cách nhau bằng dấu phẩy)', _genresController, Icons.category_rounded),
+            const SizedBox(height: 16),
+            _buildField('Tiểu sử', _bioController, Icons.description_rounded, maxLines: 3),
+            
+            const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isUploading ? null : _save,
+                onPressed: _isUploading ? null : () {
+                  if (_nameController.text.isEmpty) return;
+                  widget.onSave({
+                    'name': _nameController.text.trim(),
+                    'avatarUrl': _avatarUrl ?? '',
+                    'bio': _bioController.text.trim(),
+                    'genres': _genresController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+                  });
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE13300),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: Text(
-                  isEditing ? 'Lưu thay đổi' : 'Thêm nghệ sĩ',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+                child: const Text('XÁC NHẬN LƯU', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1)),
               ),
             ),
           ],
@@ -652,69 +557,32 @@ class _ArtistFormSheetState extends State<_ArtistFormSheet> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller,
-      {bool isRequired = false, int maxLines = 1}) {
+  Widget _buildField(String label, TextEditingController controller, IconData icon, {int maxLines = 1}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF0A1F1A),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0A1F1A))),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A1F1A).withOpacity(0.03),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: TextField(
+            controller: controller,
+            maxLines: maxLines,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              prefixIcon: Padding(
+                padding: const EdgeInsets.only(bottom: 0),
+                child: Icon(icon, size: 20, color: const Color(0xFF0A1F1A).withOpacity(0.3)),
               ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
-            if (isRequired)
-              const Text(
-                ' *',
-                style: TextStyle(color: Color(0xFFE13300)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          maxLines: maxLines,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: const Color(0xFFF7F9F8),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           ),
         ),
       ],
     );
-  }
-
-  void _save() {
-    if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vui lòng nhập tên nghệ sĩ'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Color(0xFFE13300),
-        ),
-      );
-      return;
-    }
-
-    final genres = _genresController.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-
-    widget.onSave({
-      'name': _nameController.text.trim(),
-      'avatarUrl': _avatarUrl ?? '',
-      'bio': _bioController.text.trim(),
-      'genres': genres,
-    });
   }
 }
