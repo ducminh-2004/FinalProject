@@ -191,7 +191,8 @@ class _AdminAlbumsScreenState extends State<AdminAlbumsScreen> {
               await FirestoreService.updateAlbum(album.id, data);
             }
             await _loadAlbums();
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            Navigator.pop(context);
           } catch (e) {
             debugPrint('Error: $e');
           }

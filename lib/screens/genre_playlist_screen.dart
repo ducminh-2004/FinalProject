@@ -21,7 +21,6 @@ class _GenrePlaylistScreenState extends State<GenrePlaylistScreen> {
   List<Song> _songs = [];
   bool _isLoading = true;
 
-  static const _mintGreen = Color(0xFF0E6B5A);
   static const _darkText = Color(0xFF0A1F1A);
 
   @override
@@ -570,14 +569,17 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
               if (controller.text.trim().isEmpty) return;
               
               if (userProvider.userId != null) {
+                final title = controller.text.trim();
                 await FirestoreService.createPlaylist(
                   userId: userProvider.userId!,
-                  title: controller.text.trim(),
+                  title: title,
                 );
+                if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Đã tạo playlist "${controller.text.trim()}"'),
+                    content: Text('Đã tạo playlist "$title"'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );

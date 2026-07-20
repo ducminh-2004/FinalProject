@@ -179,7 +179,8 @@ class _AdminSongsScreenState extends State<AdminSongsScreen> {
               await FirestoreService.updateSong(song.id, data);
             }
             await _loadSongs();
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            Navigator.pop(context);
           } catch (e) {
             debugPrint('Error: $e');
           }

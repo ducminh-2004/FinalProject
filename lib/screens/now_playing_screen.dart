@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/lyrics_provider.dart';
 import '../models/song.dart';
+import '../models/artist.dart';
 import '../firebase/firestore_service.dart';
 import '../widgets/lyrics_view.dart';
 import 'lyrics_editor_screen.dart';
 import 'user_playlists_screen.dart';
+import 'artist_detail_screen.dart';
 
 class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key, this.initialSong});
@@ -61,6 +63,39 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
     if (songId == null || songId == _lastLoadedSongId) return;
     _lastLoadedSongId = songId;
     context.read<LyricsProvider>().loadLyrics(songId);
+  }
+
+  Future<void> _navigateToArtist(Song song) async {
+    Artist? artist;
+    try {
+      if (song.artistIds.isNotEmpty) {
+        artist = await FirestoreService.getArtistById(song.artistIds.first);
+      }
+      if (artist == null && song.artist.isNotEmpty) {
+        final all = await FirestoreService.getArtists(limit: 200);
+        final target = song.artist.toLowerCase().trim();
+        artist = all.where((a) => a.name.toLowerCase().trim() == target).firstOrNull;
+        // Fallback: partial match (song.artist may contain multiple names)
+        artist ??= all.where((a) =>
+          target.contains(a.name.toLowerCase().trim()) ||
+          a.name.toLowerCase().trim().contains(target)).firstOrNull;
+      }
+    } catch (e) {
+      debugPrint('Error navigating to artist: $e');
+    }
+    if (!mounted) return;
+    if (artist == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không tìm thấy thông tin nghệ sĩ "${song.artist}"'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => ArtistDetailScreen(artist: artist!),
+    ));
   }
 
   @override
@@ -151,16 +186,18 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             ],
           ),
         ),
-        // Compact controls at bottom
-        _buildLyricsBottomControls(song, audio),
-        const SizedBox(height: 12),
+        // Compact controls at bottom — intrinsic height, won't overflow
+        SafeArea(
+          top: false,
+          child: _buildLyricsBottomControls(song, audio),
+        ),
       ],
     );
   }
 
   Widget _buildLyricsBottomControls(Song song, AudioProvider audio) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -190,13 +227,27 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      song.artistDisplay,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.55),
-                        fontSize: 12,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _navigateToArtist(song),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              song.artistDisplay,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.55),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(Icons.arrow_forward_ios_rounded,
+                              size: 9, color: Colors.white.withOpacity(0.55)),
+                        ],
                       ),
                     ),
                   ],
@@ -378,14 +429,27 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                song.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: secondaryText,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _navigateToArtist(song),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        song.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: secondaryText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 10, color: secondaryText),
+                  ],
                 ),
               ),
               if (song.genres.isNotEmpty) ...[
@@ -530,6 +594,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
         ),
         _PlayButton(
           isPlaying: audio.isPlaying,
+          showReplay: audio.songEnded,
           mintGreen: accent,
           onTap: audio.togglePlayPause,
         ),
@@ -540,8 +605,10 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
           onTap: audio.playNext,
         ),
         _ControlIcon(
-          icon: Icons.repeat_rounded,
-          color: audio.isRepeat ? accent : dimColor,
+          icon: audio.repeatMode == RepeatMode.one
+              ? Icons.repeat_one_rounded
+              : Icons.repeat_rounded,
+          color: audio.repeatMode != RepeatMode.none ? accent : dimColor,
           onTap: audio.toggleRepeat,
         ),
       ],
@@ -560,9 +627,11 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Column(
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
@@ -658,6 +727,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
               },
             ),
           ],
+          ),
         ),
       ),
     );
@@ -970,11 +1040,13 @@ class _PlayButton extends StatelessWidget {
     required this.isPlaying,
     required this.mintGreen,
     required this.onTap,
+    this.showReplay = false,
   });
 
   final bool isPlaying;
   final Color mintGreen;
   final VoidCallback onTap;
+  final bool showReplay;
 
   @override
   Widget build(BuildContext context) {
@@ -996,7 +1068,9 @@ class _PlayButton extends StatelessWidget {
           ],
         ),
         child: Icon(
-          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          isPlaying
+              ? Icons.pause_rounded
+              : (showReplay ? Icons.replay_rounded : Icons.play_arrow_rounded),
           color: Colors.white,
           size: 34,
         ),

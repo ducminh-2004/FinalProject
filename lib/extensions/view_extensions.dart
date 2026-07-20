@@ -2,9 +2,9 @@ import '../models/view_model.dart';
 import '../services/view_service.dart';
 
 extension Viewable on String {
-  /// Track a view for a song
-  Future<void> trackSongView({String? userId, int durationSeconds = 0}) async {
-    await ViewService.trackView(
+  /// Track a view for a song. Returns the created view record's document id.
+  Future<String?> trackSongView({String? userId, int durationSeconds = 0}) async {
+    return ViewService.trackView(
       targetType: ViewTargetType.song,
       targetId: this,
       userId: userId,

@@ -5,8 +5,8 @@ import '../models/view_model.dart';
 class ViewService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Track a view for any target
-  static Future<void> trackView({
+  // Track a view for any target. Returns the created view record's document id.
+  static Future<String?> trackView({
     required ViewTargetType targetType,
     required String targetId,
     String? userId,
@@ -20,7 +20,7 @@ class ViewService {
         durationSeconds: durationSeconds,
       );
 
-      await _db.collection('views').add(record.toFirestore());
+      final docRef = await _db.collection('views').add(record.toFirestore());
 
       // Update aggregate stats (increment counters)
       await _updateStats(targetType, targetId, userId, durationSeconds);
@@ -30,8 +30,26 @@ class ViewService {
         await _updateDailyTargetStats(targetId);
         await _incrementArtistStreamCount(targetId, userId, durationSeconds);
       }
+      return docRef.id;
     } catch (e) {
       debugPrint('Error tracking view: $e');
+      return null;
+    }
+  }
+
+  /// Write the actual listened duration back into a specific view record so
+  /// per-user monthly listen-time stats are accurate.
+  static Future<void> updateViewRecordDuration({
+    required String viewDocId,
+    required int durationSeconds,
+  }) async {
+    if (durationSeconds <= 0) return;
+    try {
+      await _db.collection('views').doc(viewDocId).update({
+        'durationSeconds': durationSeconds,
+      });
+    } catch (e) {
+      debugPrint('Error updating view record duration: $e');
     }
   }
 
@@ -392,6 +410,41 @@ class ViewService {
                     (data['durationSeconds'] as num?)?.toInt() ?? 0,
               );
             }).toList());
+  }
+
+  /// Increment only totalListenTime (no new view count).
+  static Future<void> updateListenTime({
+    required String songId,
+    required int durationSeconds,
+    String? userId,
+  }) async {
+    if (durationSeconds <= 0) return;
+    try {
+      await _db.collection('view_stats').doc('song_$songId').set({
+        'totalListenTime': FieldValue.increment(durationSeconds),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      final songDoc = await _db.collection('songs').doc(songId).get();
+      if (!songDoc.exists) return;
+      final data = songDoc.data()!;
+      List<String> ids = [];
+      if (data['artistIds'] is List) {
+        ids = (data['artistIds'] as List).cast<String>();
+      } else if (data['artistId'] is String) {
+        ids = [data['artistId'] as String];
+      }
+      for (final artistId in ids) {
+        if (artistId.isNotEmpty) {
+          await _db.collection('view_stats').doc('artist_$artistId').set({
+            'totalListenTime': FieldValue.increment(durationSeconds),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating listen time: $e');
+    }
   }
 
   // Helpers

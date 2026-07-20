@@ -79,13 +79,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
     );
   }
 
-  String _formatDuration(int? ms) {
-    if (ms == null) return '0:00';
-    final minutes = (ms ~/ 60000);
-    final seconds = ((ms % 60000) ~/ 1000).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

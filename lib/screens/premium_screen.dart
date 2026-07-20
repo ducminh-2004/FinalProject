@@ -175,9 +175,11 @@ class _PackageCard extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
           ElevatedButton(
             onPressed: () async {
-              await context.read<UserProvider>().upgradeSubscription(package.name, package.price);
+              final name = package.name;
+              await context.read<UserProvider>().upgradeSubscription(name, package.price);
+              if (!context.mounted) return;
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Nâng cấp lên ${package.name} thành công!')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Nâng cấp lên $name thành công!')));
             },
             child: const Text('Đồng ý'),
           ),

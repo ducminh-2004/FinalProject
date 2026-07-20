@@ -3,35 +3,41 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/song.dart';
+import '../models/view_model.dart';
 import '../extensions/view_extensions.dart';
 import '../firebase/firestore_service.dart';
+import '../services/view_service.dart';
 
 enum AppPlayerState { stopped, playing, paused, completed }
+
+enum RepeatMode { none, all, one }
 
 class AudioProvider extends ChangeNotifier {
   final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
 
-  // Current playback state
   Song? _currentSong;
   List<Song> _playlist = [];
   int _currentIndex = 0;
   bool _isPlaying = false;
   bool _isShuffle = false;
-  bool _isRepeat = false;
+  RepeatMode _repeatMode = RepeatMode.none;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   AppPlayerState _playerState = AppPlayerState.stopped;
 
-  // Fallback timer — polls position when onPositionChanged stream misses ticks
   Timer? _positionTimer;
-
-  // Radio mode
   bool _isRadioMode = false;
-
-  // Sleep timer
   Timer? _sleepTimer;
   Timer? _sleepCountdown;
   Duration? _sleepRemaining;
+
+  // Listen-time tracking
+  DateTime? _songStartTime;
+  bool _completionHandled = false;
+  String? _currentViewDocId;
+
+  // True when playback reached the end with nothing queued to play next
+  bool _songEnded = false;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -39,11 +45,13 @@ class AudioProvider extends ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isPlaying => _isPlaying;
   bool get isShuffle => _isShuffle;
-  bool get isRepeat => _isRepeat;
+  RepeatMode get repeatMode => _repeatMode;
+  bool get isRepeat => _repeatMode != RepeatMode.none;
   Duration get position => _position;
   Duration get duration => _duration;
   AppPlayerState get playerState => _playerState;
   bool get hasSong => _currentSong != null;
+  bool get songEnded => _songEnded;
   bool get hasSleepTimer => _sleepTimer != null;
   Duration? get sleepRemaining => _sleepRemaining;
   bool get isRadioMode => _isRadioMode;
@@ -53,24 +61,23 @@ class AudioProvider extends ChangeNotifier {
   }
 
   void _initListeners() {
-    // Duration listener
     _audioPlayer.onDurationChanged.listen((d) {
       _duration = d;
       notifyListeners();
     });
 
-    // Position listener
     _audioPlayer.onPositionChanged.listen((p) {
       _position = p;
       notifyListeners();
     });
 
-    // Player state listener
     _audioPlayer.onPlayerStateChanged.listen((state) {
       switch (state) {
         case ap.PlayerState.playing:
           _isPlaying = true;
           _playerState = AppPlayerState.playing;
+          _completionHandled = false;
+          _songEnded = false;
           _startPositionTimer();
           break;
         case ap.PlayerState.paused:
@@ -87,7 +94,7 @@ class AudioProvider extends ChangeNotifier {
           _isPlaying = false;
           _playerState = AppPlayerState.completed;
           _stopPositionTimer();
-          _onSongComplete();
+          _handleCompletion();
           break;
         default:
           break;
@@ -95,10 +102,16 @@ class AudioProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Completion listener
     _audioPlayer.onPlayerComplete.listen((_) {
-      _onSongComplete();
+      _handleCompletion();
     });
+  }
+
+  void _handleCompletion() {
+    if (_completionHandled) return;
+    _completionHandled = true;
+    _recordListenTime();
+    _onSongComplete();
   }
 
   void _startPositionTimer() {
@@ -118,14 +131,52 @@ class AudioProvider extends ChangeNotifier {
     _positionTimer = null;
   }
 
+  // Record actual listening duration to Firestore
+  void _recordListenTime() {
+    if (_songStartTime == null || _currentSong == null) return;
+    final elapsed = DateTime.now().difference(_songStartTime!).inSeconds;
+    _songStartTime = null;
+    final viewDocId = _currentViewDocId;
+    _currentViewDocId = null;
+    if (elapsed < 3) return;
+    final songId = _currentSong!.id;
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    // Global aggregate listen time
+    ViewService.updateListenTime(songId: songId, durationSeconds: elapsed, userId: userId);
+    // Per-user view record duration (drives monthly listen-time stat)
+    if (viewDocId != null) {
+      ViewService.updateViewRecordDuration(viewDocId: viewDocId, durationSeconds: elapsed);
+    }
+  }
+
   void _onSongComplete() {
-    if (_isRepeat) {
+    if (_repeatMode == RepeatMode.one && _currentSong != null) {
       playSong(_currentSong!, restart: true);
-    } else if (_currentIndex >= _playlist.length - 1 && _isRadioMode && _currentSong != null) {
-      _fetchRadioSuggestions(_currentSong!);
+      return;
+    }
+
+    if (_currentIndex >= _playlist.length - 1) {
+      if (_isRadioMode && _currentSong != null) {
+        _fetchRadioSuggestions(_currentSong!);
+      } else if (_repeatMode == RepeatMode.all && _playlist.isNotEmpty) {
+        _currentIndex = 0;
+        playSong(_playlist[0]);
+      } else {
+        _endPlaylist();
+      }
     } else {
       playNext();
     }
+  }
+
+  // End of playlist — keep current song visible so user can replay
+  Future<void> _endPlaylist() async {
+    _isPlaying = false;
+    _position = Duration.zero;
+    _playerState = AppPlayerState.stopped;
+    _songEnded = true;
+    await _audioPlayer.stop();
+    notifyListeners();
   }
 
   Future<void> _fetchRadioSuggestions(Song baseSong) async {
@@ -137,7 +188,6 @@ class AudioProvider extends ChangeNotifier {
       if (suggestions.isEmpty) {
         suggestions = await FirestoreService.getSongs();
       }
-      // Exclude songs already in playlist
       final existingIds = _playlist.map((s) => s.id).toSet();
       final fresh = suggestions.where((s) => !existingIds.contains(s.id)).toList();
       if (fresh.isNotEmpty) {
@@ -153,31 +203,33 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Play a single song
   Future<void> playSong(Song song, {bool restart = false, String? userId}) async {
     if (song.audioUrl == null || song.audioUrl!.isEmpty) return;
 
-    // Nếu là bài hiện tại và đang phát, không restart
     if (_currentSong?.id == song.id && _isPlaying && !restart) {
       return;
     }
 
+    // Save listen time for the song being replaced
+    if (_currentSong?.id != song.id) {
+      _recordListenTime();
+    }
+
     _currentSong = song;
     _position = Duration.zero;
-    _isPlaying = true; // Set trước để UI update ngay
+    _isPlaying = true;
+    _completionHandled = false;
+    _songEnded = false;
+    _songStartTime = DateTime.now();
     notifyListeners();
 
-    // Track song view
-    // Always associate the history entry with the signed-in user. Most callers
-    // do not have to (and previously did not) pass a userId explicitly.
     final effectiveUserId = userId ?? FirebaseAuth.instance.currentUser?.uid;
-    song.id.trackSongView(
-      userId: effectiveUserId,
-      durationSeconds: 0,
-    );
+    _currentViewDocId = null;
+    song.id.trackSongView(userId: effectiveUserId, durationSeconds: 0).then((docId) {
+      _currentViewDocId = docId;
+    });
 
     if (!restart) {
-      // Check if song is already in playlist
       final existingIndex = _playlist.indexWhere((s) => s.id == song.id);
       if (existingIndex >= 0) {
         _currentIndex = existingIndex;
@@ -188,15 +240,13 @@ class AudioProvider extends ChangeNotifier {
     await _audioPlayer.resume();
   }
 
-  // Play a playlist from specific index
   Future<void> playPlaylist(List<Song> songs, {int startIndex = 0, String? userId}) async {
     if (songs.isEmpty) return;
 
     _playlist = _isShuffle ? (List.from(songs)..shuffle()) : List.from(songs);
     _currentIndex = startIndex;
-    
+
     if (_isShuffle && startIndex > 0) {
-      // Move the selected song to first position in shuffled list
       final selectedSong = _playlist.removeAt(startIndex);
       _playlist.insert(0, selectedSong);
       _currentIndex = 0;
@@ -205,35 +255,41 @@ class AudioProvider extends ChangeNotifier {
     await playSong(_playlist[_currentIndex], userId: userId);
   }
 
-  // Resume/Pause
   Future<void> togglePlayPause() async {
     if (_isPlaying) {
       _isPlaying = false;
       notifyListeners();
       await _audioPlayer.pause();
     } else {
-      _isPlaying = true;
-      notifyListeners();
-      await _audioPlayer.resume();
+      // If song ended naturally, restart it
+      if (_currentSong != null &&
+          (_songEnded ||
+           _playerState == AppPlayerState.completed ||
+           _playerState == AppPlayerState.stopped)) {
+        await playSong(_currentSong!, restart: true);
+      } else {
+        _isPlaying = true;
+        notifyListeners();
+        await _audioPlayer.resume();
+      }
     }
   }
 
-  // Play
   Future<void> play() async {
     _isPlaying = true;
     notifyListeners();
     await _audioPlayer.resume();
   }
 
-  // Pause
   Future<void> pause() async {
     _isPlaying = false;
     notifyListeners();
     await _audioPlayer.pause();
   }
 
-  // Stop
+  // Full stop — clears current song (explicit user action)
   Future<void> stop() async {
+    _recordListenTime();
     _isPlaying = false;
     await _audioPlayer.stop();
     _currentSong = null;
@@ -242,22 +298,20 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Seek to position
   Future<void> seek(Duration position) async {
     await _audioPlayer.seek(position);
   }
 
-  // Play next song
   Future<void> playNext() async {
     if (_playlist.isEmpty) return;
 
     _currentIndex++;
     if (_currentIndex >= _playlist.length) {
-      if (_isRepeat) {
+      if (_repeatMode == RepeatMode.all) {
         _currentIndex = 0;
       } else {
         _currentIndex = _playlist.length - 1;
-        await stop();
+        await _endPlaylist();
         return;
       }
     }
@@ -265,11 +319,9 @@ class AudioProvider extends ChangeNotifier {
     await playSong(_playlist[_currentIndex]);
   }
 
-  // Play previous song
   Future<void> playPrevious() async {
     if (_playlist.isEmpty) return;
 
-    // If position > 3 seconds, restart current song
     if (_position.inSeconds > 3) {
       await seek(Duration.zero);
       return;
@@ -283,22 +335,35 @@ class AudioProvider extends ChangeNotifier {
     await playSong(_playlist[_currentIndex]);
   }
 
-  // Toggle shuffle
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
-    
+
     if (_isShuffle && _playlist.isNotEmpty && _currentSong != null) {
-      // Shuffle but keep current song at first position
       _playlist.remove(_currentSong);
       _playlist.shuffle();
       _playlist.insert(0, _currentSong!);
       _currentIndex = 0;
     }
-    
+
     notifyListeners();
   }
 
-  // Sleep timer
+  // Cycles: none → all → one → none
+  void toggleRepeat() {
+    switch (_repeatMode) {
+      case RepeatMode.none:
+        _repeatMode = RepeatMode.all;
+        break;
+      case RepeatMode.all:
+        _repeatMode = RepeatMode.one;
+        break;
+      case RepeatMode.one:
+        _repeatMode = RepeatMode.none;
+        break;
+    }
+    notifyListeners();
+  }
+
   void setSleepTimer(Duration duration) {
     _sleepTimer?.cancel();
     _sleepCountdown?.cancel();
@@ -331,19 +396,11 @@ class AudioProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Toggle repeat
-  void toggleRepeat() {
-    _isRepeat = !_isRepeat;
-    notifyListeners();
-  }
-
-  // Set playlist
   void setPlaylist(List<Song> songs) {
     _playlist = List.from(songs);
     notifyListeners();
   }
 
-  // Get total duration of playlist
   Duration get playlistDuration {
     return _playlist.fold(
       Duration.zero,
@@ -353,6 +410,7 @@ class AudioProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _recordListenTime();
     _stopPositionTimer();
     _sleepTimer?.cancel();
     _sleepCountdown?.cancel();
