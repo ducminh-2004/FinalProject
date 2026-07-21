@@ -19,13 +19,13 @@ class ViewService {
         userId: userId,
         durationSeconds: durationSeconds,
       );
-      await _db.collection('views').add(record.toFirestore());
+      final docRef = await _db.collection('views').add(record.toFirestore());
       await _updateStats(targetType, targetId, userId, durationSeconds);
       if (targetType == ViewTargetType.song) {
         await _updateDailyTargetStats(targetId);
         await _incrementArtistStreamCount(targetId, userId, durationSeconds);
       }
-      return "ok";
+      return docRef.id;
     } catch (e) { return null; }
   }
 
