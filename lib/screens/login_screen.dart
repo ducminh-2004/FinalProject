@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../firebase/auth_service.dart';
 import '../firebase/firestore_service.dart';
 
@@ -50,10 +51,12 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // 1. Kiểm tra email có tồn tại trong hệ thống Firestore hay không
+      final email = _emailController.text.trim().toLowerCase();
+      
+      // 1. Kiểm tra email trong Firestore (dùng chữ thường)
       final userQuery = await FirebaseFirestore.instance
           .collection('users')
-          .where('email', isEqualTo: _emailController.text.trim())
+          .where('email', isEqualTo: email)
           .get();
 
       if (userQuery.docs.isEmpty) {
@@ -61,53 +64,52 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final userData = userQuery.docs.first.data();
+      final userId = userQuery.docs.first.id;
       
-      // 2. Kiểm tra tài khoản có bị khóa hoặc vô hiệu hóa không
+      // 2. Kiểm tra tài khoản bị khóa
       if (userData['isBanned'] == true) {
         throw Exception('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ hỗ trợ.');
       }
 
-      // 3. Thực hiện đăng nhập (Xác thực mật khẩu qua Firebase Auth)
+      // 3. Thực hiện đăng nhập
       final user = await _authService.signInWithEmail(
-        _emailController.text.trim(),
+        email,
         _passwordController.text,
       );
 
       if (!mounted) return;
 
       if (user != null) {
-        // Cập nhật tài liệu người dùng nếu cần
+        // Luôn cập nhật/tạo doc để đảm bảo tính nhất quán
         await FirestoreService.createUserDocument(
           userId: user.uid,
-          email: user.email ?? _emailController.text.trim(),
+          email: email,
           displayName: user.displayName,
         );
         
         if (!mounted) return;
         
-        // Kiểm tra quyền Admin
-        final isAdmin = userData['role'] == 'admin' || userData['isAdmin'] == true;
-        if (isAdmin) {
-          Navigator.of(context).pushReplacementNamed('/admin-dashboard');
-        } else {
-          Navigator.of(context).pushReplacementNamed('/main');
-        }
+        // Kiểm tra quyền Admin dựa trên UID thực tế
+        final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
+        
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed(isAdmin ? '/admin-dashboard' : '/main');
       }
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String errorMsg = 'Lỗi đăng nhập';
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        errorMsg = 'Mật khẩu không chính xác hoặc tài khoản này chỉ đăng nhập được bằng Google.';
+      } else {
+        errorMsg = e.message ?? e.code;
+      }
+      setState(() => _errorMessage = errorMsg);
     } catch (e) {
       if (!mounted) return;
-      String errorMsg = e.toString();
-      if (errorMsg.contains('Exception: ')) {
-        errorMsg = errorMsg.split('Exception: ').last;
-      } else if (errorMsg.contains('wrong-password') || errorMsg.contains('Mật khẩu không đúng')) {
-        errorMsg = 'Mật khẩu không chính xác.';
-      }
-      setState(() {
-        _errorMessage = errorMsg;
-      });
+      String errorMsg = e.toString().replaceFirst('Exception: ', '');
+      setState(() => _errorMessage = errorMsg);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -119,44 +121,99 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final user = await _authService.signInWithGoogle();
-      if (!mounted) return;
-
       if (user != null) {
-        // Kiểm tra xem tài khoản Google này có bị ban không
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        if (userDoc.exists && userDoc.data()?['isBanned'] == true) {
-          await _authService.signOut();
-          throw Exception('Tài khoản Google này đã bị khóa.');
-        }
-
-        await FirestoreService.createUserDocument(
-          userId: user.uid,
-          email: user.email ?? '',
-          displayName: user.displayName,
-        );
-        
+        await _finishSignIn(user);
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'account-exists-with-different-credential' && e.credential != null) {
+        // Email đã tồn tại với phương thức khác (thường là password)
         if (!mounted) return;
-
-        final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
-        if (!mounted) return;
-        if (isAdmin) {
-          Navigator.of(context).pushReplacementNamed('/admin-dashboard');
-        } else {
-          Navigator.of(context).pushReplacementNamed('/main');
-        }
+        _showLinkAccountDialog(e.email!, e.credential!);
+      } else {
+        setState(() => _errorMessage = 'Đăng nhập Google thất bại: ${e.message}');
       }
     } catch (e) {
-      if (!mounted) return;
-      String errorMsg = e.toString();
-      if (errorMsg.contains('Exception: ')) errorMsg = errorMsg.split('Exception: ').last;
-      setState(() {
-        _errorMessage = 'Đăng nhập Google thất bại: $errorMsg';
-      });
+      setState(() => _errorMessage = 'Đăng nhập Google thất bại: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _finishSignIn(User user) async {
+    // Kiểm tra ban
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (userDoc.exists && userDoc.data()?['isBanned'] == true) {
+      await _authService.signOut();
+      throw Exception('Tài khoản này đã bị khóa.');
+    }
+
+    await FirestoreService.createUserDocument(
+      userId: user.uid,
+      email: user.email ?? '',
+      displayName: user.displayName,
+    );
+    
+    if (!mounted) return;
+
+    final isAdmin = await FirestoreService.checkUserIsAdmin(user.uid);
+    if (!mounted) return;
+    
+    Navigator.of(context).pushReplacementNamed(isAdmin ? '/admin-dashboard' : '/main');
+  }
+
+  void _showLinkAccountDialog(String email, AuthCredential credential) {
+    final passController = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Liên kết tài khoản'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Email $email đã được đăng ký bằng mật khẩu. Vui lòng nhập mật khẩu để gộp tài khoản Google này vào.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Mật khẩu',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final password = passController.text.trim();
+              if (password.isEmpty) return;
+              
+              Navigator.pop(context); // Đóng dialog
+              setState(() => _isLoading = true);
+              
+              try {
+                final user = await _authService.linkGoogleWithEmail(email, password, credential);
+                if (user != null) {
+                  await _finishSignIn(user);
+                }
+              } catch (e) {
+                setState(() => _errorMessage = e.toString());
+              } finally {
+                setState(() => _isLoading = false);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _mintGreen, foregroundColor: Colors.white),
+            child: const Text('Xác minh & Gộp'),
+          ),
+        ],
+      ),
+    );
   }
 
   TextStyle get _bodyStyle => const TextStyle(

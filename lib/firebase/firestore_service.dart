@@ -22,7 +22,7 @@ class FirestoreService {
 
     if (!doc.exists) {
       await userRef.set({
-        'email': email,
+        'email': email.toLowerCase().trim(),
         'displayName': displayName ?? '',
         'role': isAdmin ? 'admin' : 'user',
         'isAdmin': isAdmin,

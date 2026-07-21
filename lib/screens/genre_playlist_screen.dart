@@ -566,23 +566,47 @@ class _AddToPlaylistSheetState extends State<_AddToPlaylistSheet> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (controller.text.trim().isEmpty) return;
+              final title = controller.text.trim();
+              if (title.isEmpty) return;
               
-              if (userProvider.userId != null) {
-                final title = controller.text.trim();
-                await FirestoreService.createPlaylist(
-                  userId: userProvider.userId!,
-                  title: title,
-                );
-                if (!dialogContext.mounted) return;
-                Navigator.pop(dialogContext);
-                if (!context.mounted) return;
+              // Kiểm tra tên trùng
+              if (_playlists.any((p) => p.title.toLowerCase() == title.toLowerCase())) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Đã tạo playlist "$title"'),
+                  const SnackBar(
+                    content: Text('Tên playlist đã tồn tại!'),
+                    backgroundColor: Colors.red,
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
+                return;
+              }
+
+              if (userProvider.userId != null) {
+                try {
+                  final newPlaylistId = await FirestoreService.createPlaylist(
+                    userId: userProvider.userId!,
+                    title: title,
+                  );
+                  
+                  // Thêm luôn bài hát vào playlist mới tạo
+                  await FirestoreService.addSongToPlaylist(newPlaylistId, songId);
+
+                  if (!dialogContext.mounted) return;
+                  Navigator.pop(dialogContext);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Đã tạo playlist "$title" và thêm bài hát'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } catch (e) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('Lỗi: $e')),
+                    );
+                  }
+                }
               }
             },
             style: ElevatedButton.styleFrom(
