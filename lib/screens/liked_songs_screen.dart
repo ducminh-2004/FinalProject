@@ -166,16 +166,6 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        if (!_isLoading && _songs.isNotEmpty) ...[
-                          Text(
-                            _formatTotalDuration(),
-                            style: TextStyle(
-                              color: _darkText.withValues(alpha: 0.5),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),

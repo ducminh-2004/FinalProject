@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/song.dart';
 import '../models/artist.dart';
+import '../models/album.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/auth_service.dart';
 
@@ -16,10 +19,15 @@ class UserProvider extends ChangeNotifier {
   UserRole _role = UserRole.user;
   String _subscriptionTier = 'Free';
   List<String> _likedSongIds = [];
+  List<String> _likedAlbumIds = [];
   List<String> _followedArtistIds = [];
   bool _isLoading = false;
   bool _isPendingArtist = false;
   String? _artistId;
+
+  StreamSubscription? _likedSongsSub;
+  StreamSubscription? _likedAlbumsSub;
+  StreamSubscription? _followedArtistsSub;
 
   String? get userId => _userId;
   String? get email => _email;
@@ -28,6 +36,7 @@ class UserProvider extends ChangeNotifier {
   UserRole get role => _role;
   String get subscriptionTier => _subscriptionTier;
   List<String> get likedSongIds => _likedSongIds;
+  List<String> get likedAlbumIds => _likedAlbumIds;
   List<String> get followedArtistIds => _followedArtistIds;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _userId != null;
@@ -51,22 +60,50 @@ class UserProvider extends ChangeNotifier {
         _photoUrl = user.photoURL;
         await _loadUserRole();
         await _loadSubscriptionTier();
-        _loadLikedSongs();
-        _loadFollowedArtists();
+        _setupFirestoreListeners();
       } else {
-        _userId = null;
-        _email = null;
-        _displayName = null;
-        _photoUrl = null;
-        _role = UserRole.user;
-        _subscriptionTier = 'Free';
-        _likedSongIds = [];
-        _followedArtistIds = [];
-        _isPendingArtist = false;
-        _artistId = null;
-        notifyListeners();
+        signOut();
       }
     });
+  }
+
+  void _setupFirestoreListeners() {
+    if (_userId == null) return;
+
+    _cancelFirestoreListeners();
+
+    _likedSongsSub = FirebaseFirestore.instance
+        .collection('liked_songs')
+        .where('userId', isEqualTo: _userId)
+        .snapshots()
+        .listen((snap) {
+      _likedSongIds = snap.docs.map((doc) => doc.data()['songId'] as String).toList();
+      notifyListeners();
+    });
+
+    _likedAlbumsSub = FirebaseFirestore.instance
+        .collection('liked_albums')
+        .where('userId', isEqualTo: _userId)
+        .snapshots()
+        .listen((snap) {
+      _likedAlbumIds = snap.docs.map((doc) => doc.data()['albumId'] as String).toList();
+      notifyListeners();
+    });
+
+    _followedArtistsSub = FirebaseFirestore.instance
+        .collection('followed_artists')
+        .where('userId', isEqualTo: _userId)
+        .snapshots()
+        .listen((snap) {
+      _followedArtistIds = snap.docs.map((doc) => doc.data()['artistId'] as String).toList();
+      notifyListeners();
+    });
+  }
+
+  void _cancelFirestoreListeners() {
+    _likedSongsSub?.cancel();
+    _likedAlbumsSub?.cancel();
+    _followedArtistsSub?.cancel();
   }
 
   Future<void> _loadUserRole() async {
@@ -125,42 +162,19 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadLikedSongs() async {
-    if (_userId == null) return;
-    
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      _likedSongIds = await FirestoreService.getLikedSongIds(_userId!);
-    } catch (e) {
-      debugPrint('Error loading liked songs: $e');
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  Future<void> _loadFollowedArtists() async {
-    if (_userId == null) return;
-    
-    try {
-      _followedArtistIds = await FirestoreService.getFollowedArtistIds(_userId!);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading followed artists: $e');
-    }
-  }
-
   bool isSongLiked(String songId) {
     return _likedSongIds.contains(songId);
+  }
+
+  bool isAlbumLiked(String albumId) {
+    return _likedAlbumIds.contains(albumId);
   }
 
   bool isArtistFollowed(String artistId) {
     return _followedArtistIds.contains(artistId);
   }
 
-  Future<void> toggleLike(String songId) async {
+  Future<void> toggleLikeSong(String songId) async {
     if (_userId == null) {
       debugPrint('User not logged in');
       return;
@@ -168,16 +182,23 @@ class UserProvider extends ChangeNotifier {
 
     try {
       await FirestoreService.toggleLikeSong(_userId!, songId);
-      
-      if (_likedSongIds.contains(songId)) {
-        _likedSongIds.remove(songId);
-      } else {
-        _likedSongIds.add(songId);
-      }
-      
-      notifyListeners();
+      // Local list is updated by Firestore snapshot listener
     } catch (e) {
       debugPrint('Error toggling like: $e');
+    }
+  }
+
+  // Alias for backward compatibility
+  Future<void> toggleLike(String songId) => toggleLikeSong(songId);
+
+  Future<void> toggleLikeAlbum(String albumId) async {
+    if (_userId == null) return;
+
+    try {
+      await FirestoreService.toggleLikeAlbum(_userId!, albumId);
+      // Local list is updated by Firestore snapshot listener
+    } catch (e) {
+      debugPrint('Error toggling album like: $e');
     }
   }
 
@@ -189,14 +210,7 @@ class UserProvider extends ChangeNotifier {
 
     try {
       await FirestoreService.toggleFollowArtist(_userId!, artistId);
-      
-      if (_followedArtistIds.contains(artistId)) {
-        _followedArtistIds.remove(artistId);
-      } else {
-        _followedArtistIds.add(artistId);
-      }
-      
-      notifyListeners();
+      // Local list is updated by Firestore snapshot listener
     } catch (e) {
       debugPrint('Error toggling follow artist: $e');
     }
@@ -215,23 +229,24 @@ class UserProvider extends ChangeNotifier {
 
   Future<List<Artist>> getFollowedArtists() async {
     if (_userId == null) return [];
-
-    debugPrint('UserProvider: Getting followed artists for $_userId, IDs: $_followedArtistIds');
     
     final artists = <Artist>[];
     for (final artistId in _followedArtistIds) {
-      debugPrint('UserProvider: Loading artist $artistId');
-      
       final artist = await FirestoreService.getArtistById(artistId);
-      
-      if (artist != null) {
-        debugPrint('UserProvider: Found in Firestore: ${artist.name}');
-        artists.add(artist);
-      }
+      if (artist != null) artists.add(artist);
     }
-    
-    debugPrint('UserProvider: Total artists: ${artists.length}');
     return artists;
+  }
+
+  Future<List<Album>> getLikedAlbums() async {
+    if (_userId == null) return [];
+
+    final albums = <Album>[];
+    for (final albumId in _likedAlbumIds) {
+      final album = await FirestoreService.getAlbumById(albumId);
+      if (album != null) albums.add(album);
+    }
+    return albums;
   }
 
   Future<void> refreshUser() async {
@@ -259,16 +274,24 @@ class UserProvider extends ChangeNotifier {
   }
 
   void signOut() {
+    _cancelFirestoreListeners();
     _userId = null;
     _email = null;
     _displayName = null;
     _photoUrl = null;
     _role = UserRole.user;
     _likedSongIds = [];
+    _likedAlbumIds = [];
     _followedArtistIds = [];
     _isPendingArtist = false;
     _artistId = null;
     _authService.signOut();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _cancelFirestoreListeners();
+    super.dispose();
   }
 }

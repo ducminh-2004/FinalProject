@@ -7,6 +7,7 @@ import 'library_screen.dart';
 import 'trending_screen.dart';
 import 'premium_screen.dart';
 import 'now_playing_screen.dart';
+import 'room_list_screen.dart';
 import '../providers/audio_provider.dart';
 import '../models/song.dart';
 
@@ -22,12 +23,13 @@ class _MainScreenState extends State<MainScreen> {
 
   static const _mintGreen = Color(0xFF0E6B5A);
 
-  static const _tabs = <Widget>[
-    HomeScreen(key: PageStorageKey('home')),
-    SearchScreen(key: PageStorageKey('search')),
-    TrendingScreen(key: PageStorageKey('trending')),
-    LibraryScreen(key: PageStorageKey('library')),
-    PremiumScreen(key: PageStorageKey('premium')),
+  static final _tabs = <Widget>[
+    const HomeScreen(key: PageStorageKey('home')),
+    const SearchScreen(key: PageStorageKey('search')),
+    const RoomListScreen(key: PageStorageKey('rooms')),
+    const TrendingScreen(key: PageStorageKey('trending')),
+    const LibraryScreen(key: PageStorageKey('library')),
+    const PremiumScreen(key: PageStorageKey('premium')),
   ];
 
   @override
@@ -73,6 +75,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.search_outlined),
                 selectedIcon: Icon(Icons.search_rounded),
                 label: 'Search',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.group_outlined),
+                selectedIcon: Icon(Icons.group_rounded),
+                label: 'Room',
               ),
               NavigationDestination(
                 icon: Icon(Icons.trending_up_outlined),
