@@ -91,6 +91,7 @@ class Song {
 
   Map<String, dynamic> toFirestore() {
     return {
+      'id': id,
       'title': title,
       'artists': artists,
       'artistIds': artistIds,

@@ -149,7 +149,11 @@ class AudioProvider extends ChangeNotifier {
     }
   }
 
+  bool isRemoteControlled = false;
+
   void _onSongComplete() {
+    if (isRemoteControlled) return;
+
     if (_repeatMode == RepeatMode.one && _currentSong != null) {
       playSong(_currentSong!, restart: true);
       return;
@@ -215,8 +219,12 @@ class AudioProvider extends ChangeNotifier {
       _recordListenTime();
     }
 
+    // Stop current playback to clear buffers and positions
+    await _audioPlayer.stop();
+
     _currentSong = song;
     _position = Duration.zero;
+    _duration = Duration.zero;
     _isPlaying = true;
     _completionHandled = false;
     _songEnded = false;
@@ -228,6 +236,9 @@ class AudioProvider extends ChangeNotifier {
     song.id.trackSongView(userId: effectiveUserId, durationSeconds: 0).then((docId) {
       _currentViewDocId = docId;
     });
+
+    // Cập nhật lượt nghe cho Album nếu bài hát thuộc album (tương lai có thể mở rộng)
+    // Hiện tại extension trackSongView đã tự xử lý logic liên quan đến bài hát.
 
     if (!restart) {
       final existingIndex = _playlist.indexWhere((s) => s.id == song.id);

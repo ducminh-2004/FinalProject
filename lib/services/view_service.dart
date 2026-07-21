@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/view_model.dart';
+import '../firebase/firestore_service.dart';
 
 class ViewService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Track a view for any target. Returns the created view record's document id.
   static Future<String?> trackView({
     required ViewTargetType targetType,
     required String targetId,
@@ -19,512 +19,223 @@ class ViewService {
         userId: userId,
         durationSeconds: durationSeconds,
       );
-
       final docRef = await _db.collection('views').add(record.toFirestore());
-
-      // Update aggregate stats (increment counters)
       await _updateStats(targetType, targetId, userId, durationSeconds);
-
-      // Cập nhật thống kê riêng theo ngày để tính Trending 24h
       if (targetType == ViewTargetType.song) {
         await _updateDailyTargetStats(targetId);
         await _incrementArtistStreamCount(targetId, userId, durationSeconds);
       }
       return docRef.id;
-    } catch (e) {
-      debugPrint('Error tracking view: $e');
-      return null;
-    }
-  }
-
-  /// Write the actual listened duration back into a specific view record so
-  /// per-user monthly listen-time stats are accurate.
-  static Future<void> updateViewRecordDuration({
-    required String viewDocId,
-    required int durationSeconds,
-  }) async {
-    if (durationSeconds <= 0) return;
-    try {
-      await _db.collection('views').doc(viewDocId).update({
-        'durationSeconds': durationSeconds,
-      });
-    } catch (e) {
-      debugPrint('Error updating view record duration: $e');
-    }
-  }
-
-  /// Khi một bài hát được nghe, ta cộng dồn lượt stream cho TẤT CẢ Nghệ sĩ tham gia
-  static Future<void> _incrementArtistStreamCount(String songId, String? userId, int durationSeconds) async {
-    try {
-      final songDoc = await _db.collection('songs').doc(songId).get();
-      if (!songDoc.exists) return;
-      
-      final data = songDoc.data()!;
-      List<String> ids = [];
-      if (data['artistIds'] is List) {
-        ids = (data['artistIds'] as List).cast<String>();
-      } else if (data['artistId'] is String) {
-        ids = [data['artistId'] as String];
-      }
-      
-      for (final artistId in ids) {
-        if (artistId.isNotEmpty) {
-          await _updateStats(ViewTargetType.artist, artistId, userId, durationSeconds);
-        }
-      }
-    } catch (e) {
-      debugPrint('Error updating artist streams: $e');
-    }
+    } catch (e) { return null; }
   }
 
   static Future<void> _updateDailyTargetStats(String songId) async {
     final today = _formatDate(DateTime.now());
-    final docRef = _db.collection('daily_song_stats').doc('${songId}_$today');
-    
-    await docRef.set({
-      'songId': songId,
-      'date': today,
-      'views': FieldValue.increment(1),
-      'lastUpdated': FieldValue.serverTimestamp(),
+    await _db.collection('daily_song_stats').doc('${songId}_$today').set({
+      'songId': songId, 'date': today, 'views': FieldValue.increment(1), 'lastUpdated': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  static Future<void> _incrementArtistStreamCount(String songId, String? userId, int durationSeconds) async {
+    try {
+      final songDoc = await _db.collection('songs').doc(songId).get();
+      if (!songDoc.exists) return;
+      final data = songDoc.data()!;
+      List<String> ids = (data['artistIds'] is List) ? (data['artistIds'] as List).cast<String>() : 
+                        (data['artistId'] is String ? [data['artistId'] as String] : []);
+      for (final artistId in ids) {
+        if (artistId.isNotEmpty) await _updateStats(ViewTargetType.artist, artistId, userId, durationSeconds);
+      }
+    } catch (e) {}
+  }
+
+  static Future<void> _updateStats(ViewTargetType targetType, String targetId, String? userId, int durationSeconds) async {
+    final ref = _db.collection('view_stats').doc('${targetType.name}_$targetId');
+    await _db.runTransaction((tx) async {
+      final doc = await tx.get(ref);
+      if (doc.exists) tx.update(ref, {'totalViews': FieldValue.increment(1), 'totalListenTime': FieldValue.increment(durationSeconds), 'lastViewedAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()});
+      else tx.set(ref, {'targetType': targetType.name, 'targetId': targetId, 'totalViews': 1, 'totalListenTime': durationSeconds, 'lastViewedAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()});
+    });
+  }
+
+  static Future<void> updateListenTime({required String songId, required int durationSeconds, String? userId}) async {
+    if (durationSeconds <= 0) return;
+    try { await _db.collection('view_stats').doc('song_$songId').set({'totalListenTime': FieldValue.increment(durationSeconds), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true)); } catch (e) {}
+  }
+
+  static Future<void> updateViewRecordDuration({required String viewDocId, required int durationSeconds}) async {
+    if (durationSeconds <= 0) return;
+    try { await _db.collection('views').doc(viewDocId).update({'durationSeconds': durationSeconds}); } catch (e) {}
+  }
+
+  // --- TRENDING REAL-TIME STREAM (SỬ DỤNG VIEW_STATS TRỰC TIẾP) ---
+
+  static Stream<List<Map<String, dynamic>>> getTrendingSongsStream({int limit = 50}) {
+    debugPrint('[TRENDING] Fetching Trending for last 3 days...');
+    return _db.collection('daily_song_stats').snapshots().asyncMap((snap) async {
+      final now = DateTime.now();
+      final last3Days = [
+        _formatDate(now),
+        _formatDate(now.subtract(const Duration(days: 1))),
+        _formatDate(now.subtract(const Duration(days: 2))),
+      ];
+
+      // 1. Cộng dồn lượt view của từng bài hát trong 3 ngày
+      Map<String, int> songIdToViews = {};
+      for (var doc in snap.docs) {
+        final data = doc.data();
+        if (last3Days.contains(data['date'])) {
+          final songId = data['songId'];
+          final views = (data['views'] ?? 0) as num;
+          songIdToViews[songId] = (songIdToViews[songId] ?? 0) + views.toInt();
+        }
+      }
+
+      // 2. Lấy toàn bộ bài hát để xử lý gộp trùng
+      final songsSnapshot = await _db.collection('songs').get();
+      Map<String, Map<String, dynamic>> aggregatedResults = {};
+
+      for (var doc in songsSnapshot.docs) {
+        final songData = doc.data();
+        final songId = doc.id;
+        final views = songIdToViews[songId] ?? 0;
+        
+        final title = (songData['title'] ?? '').toString().toLowerCase().trim();
+        final artist = (songData['artist'] ?? '').toString().toLowerCase().trim();
+        final key = '${title}_$artist';
+
+        if (!aggregatedResults.containsKey(key)) {
+          aggregatedResults[key] = {
+            ...songData,
+            'id': songId,
+            'todayViews': views,
+          };
+        } else {
+          // Cộng dồn view nếu bài hát trùng tên + nghệ sĩ (ví dụ bài trong album và single)
+          aggregatedResults[key]!['todayViews'] += views;
+        }
+      }
+
+      // 3. Sắp xếp và lấy Top
+      final results = aggregatedResults.values.toList()
+        ..sort((a, b) => (b['todayViews'] as int).compareTo(a['todayViews'] as int));
+
+      // FALLBACK: Nếu 3 ngày qua hoàn toàn không có ai nghe bài nào, lấy Top mọi thời đại
+      if (results.every((s) => s['todayViews'] == 0)) {
+        final topSongs = await getTopSongs(limit: limit);
+        return topSongs.map((s) => {...s, 'todayViews': s['totalViews']}).toList();
+      }
+
+      debugPrint('[TRENDING] Successfully sending ${results.length} unique songs to UI');
+      return results.take(limit).toList();
+    });
+  }
+
+  // --- CÁC HÀM TỐI ƯU KHÁC ---
+
+  static Future<List<Map<String, dynamic>>> getTopSongs({int limit = 10, DateTime? since}) async {
+    try {
+      final snapshot = await _db.collection('view_stats').get();
+      final stats = snapshot.docs.map((doc) => doc.data()).where((data) => data['targetType'] == 'song').toList();
+      stats.sort((a, b) => ((b['totalViews'] ?? 0) as num).compareTo(a['totalViews'] ?? 0));
+      List<Map<String, dynamic>> res = [];
+      Set<String> seen = {};
+      for (var data in stats) {
+        if (res.length >= limit) break;
+        final sDoc = await _db.collection('songs').doc(data['targetId']).get();
+        if (sDoc.exists) {
+          final sData = sDoc.data()!;
+          final key = '${sData['title']}_${sData['artist']}'.toLowerCase().trim();
+          if (!seen.contains(key)) { seen.add(key); res.add({...sData, 'id': sDoc.id, 'totalViews': data['totalViews']}); }
+        }
+      }
+      return res;
+    } catch (e) { return []; }
+  }
+
+  static Future<List<Map<String, dynamic>>> getTopAlbums({int limit = 10}) async {
+    try {
+      final statsSnap = await _db.collection('view_stats').get();
+      final Map<String, int> songViews = {for (var doc in statsSnap.docs.where((d) => d.data()['targetType'] == 'song')) doc.data()['targetId']: ((doc.data()['totalViews'] ?? 0) as num).toInt()};
+      final albumsSnap = await _db.collection('albums').get();
+      final List<Map<String, dynamic>> albumList = [];
+      for (var doc in albumsSnap.docs) {
+        final data = doc.data();
+        int views = 0;
+        for (final sId in List<String>.from(data['songIds'] ?? [])) views += songViews[sId] ?? 0;
+        albumList.add({...data, 'id': doc.id, 'totalViews': views});
+      }
+      albumList.sort((a, b) => (b['totalViews'] as int).compareTo(a['totalViews'] as int));
+      return albumList.take(limit).toList();
+    } catch (e) { return []; }
+  }
+
+  static Future<List<Map<String, dynamic>>> getTopArtists({int limit = 10, DateTime? since}) async {
+    try {
+      final snapshot = await _db.collection('view_stats').get();
+      final stats = snapshot.docs.map((doc) => doc.data()).where((data) => data['targetType'] == 'artist').toList();
+      stats.sort((a, b) => ((b['totalViews'] ?? 0) as num).compareTo(a['totalViews'] ?? 0));
+      return stats.take(limit).map((data) => {'id': data['targetId'], 'totalViews': data['totalViews'] ?? 0}).toList();
+    } catch (e) { return []; }
+  }
+
+  static Future<List<DailyStats>> getDailyStats({int days = 7}) async {
+    try {
+      final List<DailyStats> results = [];
+      for (int i = 0; i < days; i++) {
+        final d = DateTime.now().subtract(Duration(days: i));
+        final snap = await _db.collection('daily_song_stats').where('date', isEqualTo: _formatDate(d)).get();
+        int views = 0;
+        for (var doc in snap.docs) views += ((doc.data()['views'] ?? 0) as num).toInt();
+        results.add(DailyStats(date: d, songViews: views, albumViews: 0, artistViews: 0, totalListenTime: 0, uniqueUsers: 0));
+      }
+      return results.reversed.toList();
+    } catch (e) { return []; }
+  }
+
+  static Stream<List<Map<String, dynamic>>> getArtistAnalyticsStream({int limit = 10}) {
+    return _db.collection('view_stats').snapshots().asyncMap((snap) async {
+      final List<Map<String, dynamic>> res = [];
+      final docs = snap.docs.where((d) => d.data()['targetType'] == 'artist').toList();
+      docs.sort((a, b) => ((b.data()['totalViews'] ?? 0) as num).compareTo(a.data()['totalViews'] ?? 0));
+      for (var doc in docs.take(limit)) {
+        final aDoc = await _db.collection('artists').doc(doc.data()['targetId']).get();
+        if (aDoc.exists) res.add({...doc.data(), 'id': aDoc.id, 'name': aDoc.data()?['name'] ?? 'Unknown', 'avatarUrl': aDoc.data()?['avatarUrl']});
+      }
+      return res;
+    });
+  }
+
+  static Future<List<ViewRecord>> getUserHistory(String userId, {int limit = 50}) async {
+    try {
+      final snap = await _db.collection('views').where('userId', isEqualTo: userId).get();
+      final recs = snap.docs.map((doc) => ViewRecord(id: doc.id, targetType: ViewTargetType.song, targetId: doc.data()['targetId'] ?? '', userId: userId, viewedAt: (doc.data()['viewedAt'] as Timestamp).toDate(), durationSeconds: (doc.data()['durationSeconds'] as num?)?.toInt() ?? 0)).toList();
+      recs.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+      return recs.take(limit).toList();
+    } catch (e) { return []; }
+  }
+
+  static Stream<List<ViewRecord>> getUserHistoryStream(String userId, {int limit = 50}) {
+    return _db.collection('views').where('userId', isEqualTo: userId).snapshots().map((snap) {
+      final list = snap.docs.map((doc) => ViewRecord(id: doc.id, targetType: ViewTargetType.song, targetId: doc.data()['targetId'] ?? '', userId: userId, viewedAt: (doc.data()['viewedAt'] as Timestamp?)?.toDate() ?? DateTime.now(), durationSeconds: (doc.data()['durationSeconds'] as num?)?.toInt() ?? 0)).toList();
+      list.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+      return list.take(limit).toList();
+    });
   }
 
   static Future<List<Map<String, dynamic>>> getTrendingSongs24h({int limit = 20}) async {
     try {
       final today = _formatDate(DateTime.now());
-      final yesterday = _formatDate(DateTime.now().subtract(const Duration(days: 1)));
-
-      final snapshots = await Future.wait([
-        _db.collection('daily_song_stats').where('date', isEqualTo: today).get(),
-        _db.collection('daily_song_stats').where('date', isEqualTo: yesterday).get(),
-      ]);
-
-      Map<String, Map<String, dynamic>> consolidatedResults = {};
-      
-      for (var snap in snapshots) {
-        for (var doc in snap.docs) {
-          final songId = doc.data()['songId'];
-          final views = (doc.data()['views'] as num?)?.toInt() ?? 0;
-          
-          final songDoc = await _db.collection('songs').doc(songId).get();
-          if (songDoc.exists) {
-            final songData = songDoc.data()!;
-            final key = '${songData['title'].toString().toLowerCase()}_${songData['artist'].toString().toLowerCase()}';
-            
-            if (consolidatedResults.containsKey(key)) {
-              consolidatedResults[key]!['todayViews'] += views;
-            } else {
-              consolidatedResults[key] = {
-                ...songData,
-                'id': songDoc.id,
-                'todayViews': views,
-              };
-            }
-          }
-        }
-      }
-
-      List<Map<String, dynamic>> sortedResults = consolidatedResults.values.toList()
-        ..sort((a, b) => (b['todayViews'] as int).compareTo(a['todayViews'] as int));
-
-      return sortedResults.take(limit).toList();
-    } catch (e) {
-      debugPrint('Error getting trending 24h: $e');
-      return [];
-    }
-  }
-
-  static Future<void> _updateStats(
-    ViewTargetType targetType,
-    String targetId,
-    String? userId,
-    int durationSeconds,
-  ) async {
-    final statsRef = _db.collection('view_stats').doc('${targetType.name}_$targetId');
-
-    await _db.runTransaction((transaction) async {
-      final statsDoc = await transaction.get(statsRef);
-
-      if (statsDoc.exists) {
-        transaction.update(statsRef, {
-          'totalViews': FieldValue.increment(1),
-          'totalListenTime': FieldValue.increment(durationSeconds),
-          'lastViewedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      } else {
-        transaction.set(statsRef, {
-          'targetType': targetType.name,
-          'targetId': targetId,
-          'totalViews': 1,
-          'totalListenTime': durationSeconds,
-          'lastViewedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
-    });
-  }
-
-  static Future<ViewStats> getViewStats(
-    ViewTargetType targetType,
-    String targetId,
-  ) async {
-    try {
-      final statsDoc = await _db
-          .collection('view_stats')
-          .doc('${targetType.name}_$targetId')
-          .get();
-
-      if (!statsDoc.exists) {
-        return ViewStats.empty(targetType, targetId);
-      }
-
-      final data = statsDoc.data()!;
-      
-      return ViewStats(
-        targetType: targetType,
-        targetId: targetId,
-        totalViews: (data['totalViews'] as num?)?.toInt() ?? 0,
-        totalListenTime: (data['totalListenTime'] as num?)?.toInt() ?? 0,
-        lastViewedAt: (data['lastViewedAt'] as Timestamp?)?.toDate(),
-      );
-    } catch (e) {
-      debugPrint('Error getting view stats: $e');
-      return ViewStats.empty(targetType, targetId);
-    }
-  }
-
-  static Future<List<Map<String, dynamic>>> getTopSongs({
-    int limit = 10,
-    DateTime? since,
-  }) async {
-    try {
-      final snapshot = await _db.collection('view_stats').get();
+      final snap = await _db.collection('daily_song_stats').where('date', isEqualTo: today).get();
       final List<Map<String, dynamic>> results = [];
-      
-      final songDocs = snapshot.docs.where((doc) {
-        final data = doc.data();
-        return data['targetType'] == 'song';
-      }).toList();
-
-      songDocs.sort((a, b) {
-        final viewsA = (a.data()['totalViews'] as num?)?.toInt() ?? 0;
-        final viewsB = (b.data()['totalViews'] as num?)?.toInt() ?? 0;
-        return viewsB.compareTo(viewsA);
-      });
-
-      final topDocs = songDocs.take(limit);
-
-      for (var doc in topDocs) {
-        final data = doc.data();
-        final songId = data['targetId'] ?? doc.id.replaceFirst('song_', '');
-        
-        final songDoc = await _db.collection('songs').doc(songId).get();
-        String title = 'Bài hát không tên';
-        if (songDoc.exists) {
-          title = songDoc.data()?['title'] ?? 'Bài hát không tên';
-        }
-
-        results.add({
-          ...data,
-          'id': songId,
-          'title': title,
-        });
+      for (var doc in snap.docs) {
+        final sDoc = await _db.collection('songs').doc(doc.data()['songId']).get();
+        if (sDoc.exists) results.add({...sDoc.data()!, 'id': sDoc.id, 'todayViews': doc.data()['views']});
       }
-      
-      return results;
-    } catch (e) {
-      debugPrint('Error getting top songs: $e');
-      return [];
-    }
+      results.sort((a, b) => (b['todayViews'] as int).compareTo(a['todayViews'] as int));
+      return results.take(limit).toList();
+    } catch (e) { return []; }
   }
 
-  static Future<List<Map<String, dynamic>>> getTopArtists({
-    int limit = 10,
-    DateTime? since,
-  }) async {
-    try {
-      Query query = _db.collection('view_stats')
-          .where('targetType', isEqualTo: 'artist');
-
-      if (since != null) {
-        query = query.where('lastViewedAt', isGreaterThan: since);
-      }
-
-      final snapshot = await query
-          .orderBy('totalViews', descending: true)
-          .limit(limit)
-          .get();
-
-      final List<Map<String, dynamic>> results = [];
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final artistId = data['targetId'] ?? doc.id.replaceFirst('artist_', '');
-
-        final artistDoc = await _db.collection('artists').doc(artistId).get();
-        String name = 'Nghệ sĩ ẩn danh';
-        if (artistDoc.exists) {
-          name = artistDoc.data()?['name'] ?? 'Nghệ sĩ ẩn danh';
-        }
-
-        results.add({
-          ...data,
-          'id': artistId,
-          'name': name,
-        });
-      }
-
-      return results;
-    } catch (e) {
-      debugPrint('Error getting top artists: $e');
-      return [];
-    }
-  }
-
-  static Future<List<DailyStats>> getDailyStats({
-    int days = 7,
-  }) async {
-    try {
-      final List<DailyStats> results = [];
-      final now = DateTime.now();
-      
-      for (int i = 0; i < days; i++) {
-        final date = now.subtract(Duration(days: i));
-        final dateStr = _formatDate(date);
-        
-        final snapshot = await _db.collection('daily_song_stats')
-            .where('date', isEqualTo: dateStr)
-            .get();
-            
-        int totalViews = 0;
-        for (var doc in snapshot.docs) {
-          totalViews += (doc.data()['views'] as num?)?.toInt() ?? 0;
-        }
-        
-        results.add(DailyStats(
-          date: DateTime(date.year, date.month, date.day),
-          songViews: totalViews,
-          albumViews: 0,
-          artistViews: 0,
-          totalListenTime: 0,
-          uniqueUsers: 0,
-        ));
-      }
-      
-      return results.reversed.toList();
-    } catch (e) {
-      debugPrint('Error getting daily stats: $e');
-      return [];
-    }
-  }
-
-  static Stream<List<Map<String, dynamic>>> getArtistAnalyticsStream({int limit = 10}) {
-    return _db.collection('view_stats')
-        .where('targetType', isEqualTo: 'artist')
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final List<Map<String, dynamic>> results = [];
-      
-      final docs = snapshot.docs;
-      docs.sort((a, b) => ((b.data()['totalViews'] as num?) ?? 0)
-          .compareTo((a.data()['totalViews'] as num?) ?? 0));
-
-      final topDocs = docs.take(limit);
-
-      for (var doc in topDocs) {
-        final data = doc.data();
-        final artistId = data['targetId'] ?? doc.id.replaceFirst('artist_', '');
-        
-        final artistDoc = await _db.collection('artists').doc(artistId).get();
-        final artistData = artistDoc.data();
-        String name = artistDoc.exists ? (artistData?['name'] ?? 'Unknown') : 'Unknown';
-        String? avatarUrl = artistDoc.exists ? (artistData?['avatarUrl'] ?? artistData?['imageUrl']) : null;
-
-        results.add({
-          ...data,
-          'id': artistId,
-          'name': name,
-          'avatarUrl': avatarUrl,
-          'totalViews': (data['totalViews'] as num?)?.toInt() ?? 0,
-        });
-      }
-      return results;
-    });
-  }
-
-  static Future<List<ViewRecord>> getUserHistory(
-    String userId, {
-    int limit = 50,
-  }) async {
-    try {
-      final snapshot = await _db
-          .collection('views')
-          .where('userId', isEqualTo: userId)
-          .get();
-
-      final records = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return ViewRecord(
-          id: doc.id,
-          targetType: ViewTargetType.values.firstWhere(
-            (e) => e.name == data['targetType'],
-            orElse: () => ViewTargetType.song,
-          ),
-          targetId: data['targetId'] ?? '',
-          userId: data['userId'],
-          viewedAt: (data['viewedAt'] as Timestamp).toDate(),
-          durationSeconds: (data['durationSeconds'] as num?)?.toInt() ?? 0,
-        );
-      }).toList();
-      records.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-      return records.take(limit).toList();
-    } catch (e) {
-      debugPrint('Error getting user history: $e');
-      return [];
-    }
-  }
-
-  static Stream<List<ViewRecord>> getUserHistoryStream(
-    String userId, {
-    int limit = 50,
-  }) {
-    return _db
-        .collection('views')
-        .where('userId', isEqualTo: userId)
-        .orderBy('viewedAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = doc.data();
-              return ViewRecord(
-                id: doc.id,
-                targetType: ViewTargetType.values.firstWhere(
-                  (e) => e.name == data['targetType'],
-                  orElse: () => ViewTargetType.song,
-                ),
-                targetId: data['targetId'] ?? '',
-                userId: data['userId'],
-                viewedAt: data['viewedAt']?.toDate() ?? DateTime.now(),
-                durationSeconds:
-                    (data['durationSeconds'] as num?)?.toInt() ?? 0,
-              );
-            }).toList());
-  }
-
-  /// Increment only totalListenTime (no new view count).
-  static Future<void> updateListenTime({
-    required String songId,
-    required int durationSeconds,
-    String? userId,
-  }) async {
-    if (durationSeconds <= 0) return;
-    try {
-      await _db.collection('view_stats').doc('song_$songId').set({
-        'totalListenTime': FieldValue.increment(durationSeconds),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      final songDoc = await _db.collection('songs').doc(songId).get();
-      if (!songDoc.exists) return;
-      final data = songDoc.data()!;
-      List<String> ids = [];
-      if (data['artistIds'] is List) {
-        ids = (data['artistIds'] as List).cast<String>();
-      } else if (data['artistId'] is String) {
-        ids = [data['artistId'] as String];
-      }
-      for (final artistId in ids) {
-        if (artistId.isNotEmpty) {
-          await _db.collection('view_stats').doc('artist_$artistId').set({
-            'totalListenTime': FieldValue.increment(durationSeconds),
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        }
-      }
-    } catch (e) {
-      debugPrint('Error updating listen time: $e');
-    }
-  }
-
-  // Helpers
-  static String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  static Future<void> simulateFakeViews() async {
-    try {
-      final songsSnapshot = await _db.collection('songs').get();
-      final artistsSnapshot = await _db.collection('artists').get();
-      if (songsSnapshot.docs.isEmpty) return;
-
-      final batch = _db.batch();
-      final random = DateTime.now().millisecond;
-      
-      Map<String, String> artistNameToId = {
-        for (var doc in artistsSnapshot.docs) 
-          (doc.data()['name'] ?? '').toString().toLowerCase(): doc.id
-      };
-
-      for (var i = 0; i < songsSnapshot.docs.length; i++) {
-        final songData = songsSnapshot.docs[i].data();
-        final songId = songsSnapshot.docs[i].id;
-        final title = (songData['title'] ?? '').toString().toLowerCase();
-        
-        List<String> currentArtistIds = [];
-        if (songData['artistIds'] is List) {
-          currentArtistIds = (songData['artistIds'] as List).cast<String>();
-        } else if (songData['artistId'] is String) {
-          currentArtistIds = [songData['artistId'] as String];
-        }
-
-        if (currentArtistIds.isEmpty) {
-          final artistName = (songData['artist'] ?? '').toString().toLowerCase();
-          final id = artistNameToId[artistName];
-          if (id != null) currentArtistIds = [id];
-        }
-        
-        int extraViews = 50 + (random % 50); 
-        if (title.contains('nhân danh tình yêu') || title.contains('not my fault') || title.contains('người đầu tiên')) {
-          extraViews = 2000 + (random % 500); 
-        }
-
-        final today = _formatDate(DateTime.now());
-        final dailyRef = _db.collection('daily_song_stats').doc('${songId}_$today');
-        batch.set(dailyRef, {
-          'songId': songId, 'date': today, 
-          'views': FieldValue.increment(extraViews),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        final songStatsRef = _db.collection('view_stats').doc('song_$songId');
-        final simulatedListenTime = extraViews * 180; 
-        batch.set(songStatsRef, {
-          'targetType': 'song', 'targetId': songId,
-          'totalViews': FieldValue.increment(extraViews),
-          'totalListenTime': FieldValue.increment(simulatedListenTime),
-          'lastViewedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        for (final artistId in currentArtistIds) {
-          final artistStatsRef = _db.collection('view_stats').doc('artist_$artistId');
-          batch.set(artistStatsRef, {
-            'targetType': 'artist', 'targetId': artistId,
-            'totalViews': FieldValue.increment(extraViews),
-            'totalListenTime': FieldValue.increment(simulatedListenTime),
-            'lastViewedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          final artistRef = _db.collection('artists').doc(artistId);
-          batch.update(artistRef, {'monthlyListeners': FieldValue.increment(extraViews)});
-        }
-      }
-
-      await batch.commit();
-    } catch (e) {
-      debugPrint('Error simulating views: $e');
-    }
-  }
+  static String _formatDate(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
