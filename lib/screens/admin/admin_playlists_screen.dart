@@ -179,24 +179,54 @@ class _AdminPlaylistsScreenState extends State<AdminPlaylistsScreen> {
       builder: (context) => _PlaylistFormSheet(
         playlist: playlist,
         onSave: (data) async {
+          final title = data['title'];
+          // Kiểm tra tên trùng (trừ chính nó nếu đang edit)
+          if (_playlists.any((p) => (playlist == null || p.id != playlist.id) && p.title.toLowerCase() == title.toLowerCase())) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Tên playlist đã tồn tại!'),
+                  backgroundColor: Colors.red,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+
           try {
             if (playlist == null) {
               await FirestoreService.createPlaylist(
                 userId: 'system',
-                title: data['title'],
+                title: title,
                 coverUrl: data['coverUrl'],
               );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Đã tạo playlist hệ thống')),
+                );
+              }
             } else {
               await FirestoreService.updatePlaylist(playlist.id, {
-                'title': data['title'],
+                'title': title,
                 'coverUrl': data['coverUrl'],
               });
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Đã cập nhật playlist')),
+                );
+              }
             }
             await _loadPlaylists();
             if (!mounted) return;
             Navigator.pop(context);
           } catch (e) {
             debugPrint('Error: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Lỗi: $e')),
+              );
+            }
           }
         },
       ),
