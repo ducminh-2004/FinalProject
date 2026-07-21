@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
 import '../models/artist.dart';
+import '../models/album.dart';
 import '../providers/user_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/view_service.dart';
@@ -11,6 +12,7 @@ import 'liked_songs_screen.dart';
 import 'artist_detail_screen.dart';
 import 'now_playing_screen.dart';
 import 'user_playlists_screen.dart';
+import 'album_detail_screen.dart';
 import '../theme/app_theme.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -22,8 +24,11 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   List<Artist> _followedArtists = [];
+  List<Album> _likedAlbums = [];
   bool _isLoadingArtists = true;
+  bool _isLoadingAlbums = true;
   List<String> _lastFollowedIds = [];
+  List<String> _lastLikedAlbumIds = [];
   String _selectedFilter = 'Tất cả';
 
   static const _darkText = Color(0xFF0A1F1A);
@@ -35,6 +40,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadFollowedArtists();
+      _loadLikedAlbums();
     });
   }
 
@@ -42,12 +48,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final userProvider = context.watch<UserProvider>();
-    final currentIds = userProvider.followedArtistIds;
     
-    // Reload if followedIds changed
-    if (currentIds != _lastFollowedIds) {
-      _lastFollowedIds = currentIds;
+    // Check for content changes to handle instance issues
+    bool followedChanged = _lastFollowedIds.length != userProvider.followedArtistIds.length ||
+                          !_lastFollowedIds.every((id) => userProvider.followedArtistIds.contains(id));
+    
+    if (followedChanged) {
+      _lastFollowedIds = List.from(userProvider.followedArtistIds);
       _loadFollowedArtists();
+    }
+
+    bool albumsChanged = _lastLikedAlbumIds.length != userProvider.likedAlbumIds.length ||
+                        !_lastLikedAlbumIds.every((id) => userProvider.likedAlbumIds.contains(id));
+
+    if (albumsChanged) {
+      _lastLikedAlbumIds = List.from(userProvider.likedAlbumIds);
+      _loadLikedAlbums();
     }
   }
 
@@ -56,8 +72,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     
     final userProvider = context.read<UserProvider>();
     final followedIds = userProvider.followedArtistIds;
-    
-    debugPrint('Library: Loading followed artists, IDs: $followedIds');
     
     if (followedIds.isEmpty) {
       if (mounted) {
@@ -70,12 +84,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     
     final artists = await userProvider.getFollowedArtists();
-    debugPrint('Library: Loaded ${artists.length} artists');
     
     if (mounted) {
       setState(() {
         _followedArtists = artists;
         _isLoadingArtists = false;
+      });
+    }
+  }
+
+  Future<void> _loadLikedAlbums() async {
+    if (!mounted) return;
+
+    final userProvider = context.read<UserProvider>();
+    final likedIds = userProvider.likedAlbumIds;
+
+    if (likedIds.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _likedAlbums = [];
+          _isLoadingAlbums = false;
+        });
+      }
+      return;
+    }
+
+    final albums = await userProvider.getLikedAlbums();
+
+    if (mounted) {
+      setState(() {
+        _likedAlbums = albums;
+        _isLoadingAlbums = false;
       });
     }
   }
@@ -246,6 +285,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     );
                   },
                 ),
+                const SizedBox(height: 24),
+              ],
+
+              // Liked Albums Section
+              if (_selectedFilter == 'Tất cả' || _selectedFilter == 'Album') ...[
+                _buildSectionHeader('Album yêu thích'),
+                const SizedBox(height: 10),
+                _buildLikedAlbumsSection(),
                 const SizedBox(height: 24),
               ],
 
@@ -493,6 +540,77 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  Widget _buildLikedAlbumsSection() {
+    if (_isLoadingAlbums) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_likedAlbums.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _mintGreen.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.album_outlined, color: _mintGreen),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chưa yêu thích album nào',
+                    style: TextStyle(
+                      color: _darkText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Lưu album để nghe lại sau',
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: _likedAlbums.map((album) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _buildPlaylistItem(
+          context,
+          title: album.title,
+          subtitle: 'Album • ${album.artist}',
+          imageUrl: album.coverUrl,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AlbumDetailScreen(album: album),
+            ),
+          ),
+        ),
+      )).toList(),
+    );
+  }
+
   Widget _buildSectionItem(
     BuildContext context, {
     required IconData icon,
@@ -639,7 +757,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     BuildContext context, {
     required String title,
     required String subtitle,
-    required IconData icon,
+    String? imageUrl,
+    IconData? icon,
     VoidCallback? onTap,
   }) {
     return InkWell(
@@ -670,10 +789,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   bottomLeft: Radius.circular(15),
                 ),
               ),
-              child: Icon(
-                icon,
-                color: _darkText.withValues(alpha: 0.4),
-                size: 28,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(15),
+                  bottomLeft: Radius.circular(15),
+                ),
+                child: (imageUrl != null && imageUrl.isNotEmpty)
+                    ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Icon(icon ?? Icons.music_note_rounded, size: 28))
+                    : Icon(icon ?? Icons.music_note_rounded, color: _darkText.withValues(alpha: 0.4), size: 28),
               ),
             ),
             const SizedBox(width: 14),

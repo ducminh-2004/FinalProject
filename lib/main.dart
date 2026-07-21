@@ -13,12 +13,15 @@ import 'screens/library_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/artist_register_screen.dart';
 import 'screens/artist_dashboard_screen.dart';
+import 'screens/room_list_screen.dart';
+import 'screens/room_screen.dart';
 import 'firebase/firebase_service.dart';
 import 'providers/audio_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/analytics_provider.dart';
 import 'providers/lyrics_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/room_provider.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -40,6 +43,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => LyricsProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProxyProvider<AudioProvider, RoomProvider>(
+          create: (context) => RoomProvider(Provider.of<AudioProvider>(context, listen: false)),
+          update: (context, audioProvider, roomProvider) => roomProvider ?? RoomProvider(audioProvider),
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, themeProvider, __) => MaterialApp(
@@ -61,6 +68,8 @@ class MyApp extends StatelessWidget {
             '/artist-dashboard': (_) => const ArtistDashboardScreen(),
             '/now-playing': (_) => const NowPlayingScreen(),
             '/liked-songs': (_) => const LikedSongsScreen(),
+            '/rooms': (_) => const RoomListScreen(),
+            '/room': (_) => const RoomScreen(),
           },
         ),
       ),

@@ -6,6 +6,7 @@ import '../models/song.dart';
 import '../providers/audio_provider.dart';
 import '../providers/user_provider.dart';
 import '../extensions/view_extensions.dart';
+import '../firebase/firestore_service.dart';
 import 'now_playing_screen.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
@@ -304,6 +305,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Widget _buildActions(Color mintGreen) {
+    final userProvider = context.watch<UserProvider>();
+    final isLiked = userProvider.isAlbumLiked(widget.album.id);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
@@ -338,10 +342,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           const SizedBox(width: 12),
           IconButton.filled(
             onPressed: () {
-              setState(() => _isLiked = !_isLiked);
+              userProvider.toggleLikeAlbum(widget.album.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(_isLiked ? 'Đã thích album!' : 'Đã bỏ thích album!'),
+                  content: Text(!isLiked ? 'Đã thêm album vào thư viện!' : 'Đã xóa album khỏi thư viện!'),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
@@ -351,8 +355,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               foregroundColor: const Color(0xFF0A1F1A),
             ),
             icon: Icon(
-              _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: _isLiked ? const Color(0xFF0E6B5A) : const Color(0xFF0A1F1A),
+              isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              color: isLiked ? const Color(0xFF0E6B5A) : const Color(0xFF0A1F1A),
             ),
           ),
           const SizedBox(width: 12),
@@ -492,6 +496,9 @@ class _SongTile extends StatelessWidget {
   }
 
   void _showSongOptions(BuildContext context) {
+    final userProvider = context.read<UserProvider>();
+    final isLiked = userProvider.isSongLiked(song.id);
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -507,35 +514,21 @@ class _SongTile extends StatelessWidget {
               title: const Text('Thêm vào playlist'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Thêm vào playlist sắp có!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showPlaylistSelector(context);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.favorite_border_rounded),
-              title: const Text('Thêm vào danh sách yêu thích'),
+              leading: Icon(
+                isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: isLiked ? const Color(0xFF0E6B5A) : null,
+              ),
+              title: Text(isLiked ? 'Xóa khỏi yêu thích' : 'Thêm vào yêu thích'),
               onTap: () {
+                userProvider.toggleLikeSong(song.id);
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Đã thêm vào yêu thích!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.download_rounded),
-              title: const Text('Tải xuống'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Tải nhạc sắp có!'),
+                  SnackBar(
+                    content: Text(isLiked ? 'Đã xóa khỏi yêu thích!' : 'Đã thêm vào yêu thích!'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -548,12 +541,74 @@ class _SongTile extends StatelessWidget {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Chia sẻ sắp có!'),
+                    content: Text('Tính năng chia sẻ sắp ra mắt!'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPlaylistSelector(BuildContext context) async {
+    final userProvider = context.read<UserProvider>();
+    if (userProvider.userId == null) return;
+
+    final playlists = await FirestoreService.getUserPlaylists(userProvider.userId!);
+
+    if (!context.mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'Thêm vào playlist',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (playlists.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Text('Bạn chưa có playlist nào'),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: playlists.length,
+                  itemBuilder: (context, index) {
+                    final playlist = playlists[index];
+                    return ListTile(
+                      leading: const Icon(Icons.queue_music_rounded),
+                      title: Text(playlist.title),
+                      onTap: () async {
+                        await FirestoreService.addSongToPlaylist(playlist.id, song.id);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Đã thêm vào playlist "${playlist.title}"'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),

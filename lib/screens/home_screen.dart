@@ -63,22 +63,29 @@ class _HomeScreenState extends State<HomeScreen> {
     if (userId != null) {
       _historySubscription = ViewService.getUserHistoryStream(
         userId,
-        limit: 15,
+        limit: 50, // Lấy 50 bản ghi để đảm bảo lọc đủ 8 bài duy nhất
       ).listen((history) async {
         if (_historyUserId != userId) return;
-        final songIds = <String>[];
-        for (final record in history) {
-          if (record.targetType == ViewTargetType.song &&
-              !songIds.contains(record.targetId)) {
-            songIds.add(record.targetId);
+        
+        final songRecords = history.where((r) => r.targetType == ViewTargetType.song).toList();
+        final recentSongIds = <String>[];
+        for (final r in songRecords) {
+          if (!recentSongIds.contains(r.targetId)) {
+            recentSongIds.add(r.targetId);
           }
+          if (recentSongIds.length == 8) break;
         }
 
-        if (songIds.isNotEmpty) {
-          final songs = await FirestoreService.getSongsByIds(songIds);
+        if (recentSongIds.isNotEmpty) {
+          final recentSongs = await FirestoreService.getSongsByIds(recentSongIds);
           if (mounted && _historyUserId == userId) {
             setState(() {
-              _recentlyPlayed = songs;
+              // Map ngược lại để giữ đúng thứ tự thời gian (bài mới nhất lên đầu)
+              _recentlyPlayed = recentSongIds
+                  .map((id) => recentSongs.firstWhere((s) => s.id == id,
+                      orElse: () => Song(id: id, title: '')))
+                  .where((s) => s.title.isNotEmpty)
+                  .toList();
             });
           }
         } else if (mounted && _historyUserId == userId) {
@@ -105,37 +112,71 @@ class _HomeScreenState extends State<HomeScreen> {
       List<Song> recentlyPlayedSongs = [];
 
       if (userId != null) {
-        // Lấy lịch sử nghe nhạc của người dùng
-        final history = await ViewService.getUserHistory(userId, limit: 15);
-        final songIds = <String>[];
-        for (final record in history) {
-          if (record.targetType == ViewTargetType.song &&
-              !songIds.contains(record.targetId)) {
-            songIds.add(record.targetId);
+        // Lấy lịch sử nghe nhạc của người dùng (logic tương tự Profile)
+        final history = await ViewService.getUserHistory(userId, limit: 50);
+        final songRecords = history.where((r) => r.targetType == ViewTargetType.song).toList();
+        final recentSongIds = <String>[];
+        for (final r in songRecords) {
+          if (!recentSongIds.contains(r.targetId)) {
+            recentSongIds.add(r.targetId);
           }
+          if (recentSongIds.length == 8) break;
         }
         
-        if (songIds.isNotEmpty) {
-          recentlyPlayedSongs = await FirestoreService.getSongsByIds(songIds);
+        if (recentSongIds.isNotEmpty) {
+          final recentSongs = await FirestoreService.getSongsByIds(recentSongIds);
+          recentlyPlayedSongs = recentSongIds
+              .map((id) => recentSongs.firstWhere((s) => s.id == id,
+                  orElse: () => Song(id: id, title: '')))
+              .where((s) => s.title.isNotEmpty)
+              .toList();
         }
       }
 
-      // Nếu không có lịch sử hoặc chưa đăng nhập, lấy bài hát mới nhất làm fallback
+      // FALLBACK: Nếu không có lịch sử, lấy bài hát mới nhất
       if (recentlyPlayedSongs.isEmpty) {
         recentlyPlayedSongs = await FirestoreService.getSongs(limit: 8);
       }
 
-      final artists = await FirestoreService.getArtists(limit: 20);
-      final albums = await FirestoreService.getAlbums(limit: 20);
+      // Popular Artists & Albums (Xếp hạng theo tổng View của bài hát)
+      final topArtistsData = await ViewService.getTopArtists(limit: 15);
+      final List<Artist> artists = [];
+      for (var data in topArtistsData) {
+        final artist = await FirestoreService.getArtistById(data['id']);
+        if (artist != null) artists.add(artist);
+      }
+      if (artists.length < 5) {
+        final fallback = await FirestoreService.getArtists(limit: 15);
+        for (var a in fallback) {
+          if (!artists.any((e) => e.id == a.id)) artists.add(a);
+        }
+      }
 
-      // Lấy danh sách bài hát phổ biến
+      final topAlbumsData = await ViewService.getTopAlbums(limit: 15);
+      final List<Album> albums = [];
+      for (var data in topAlbumsData) {
+        final album = await FirestoreService.getAlbumById(data['id']);
+        if (album != null) albums.add(album);
+      }
+      if (albums.length < 5) {
+        final fallback = await FirestoreService.getAlbums(limit: 15);
+        for (var a in fallback) {
+          if (!albums.any((e) => e.id == a.id)) albums.add(a);
+        }
+      }
+
+      // Popular Songs
       final topSongsData = await ViewService.getTopSongs(limit: 10);
-      final topSongIds = topSongsData.map((s) => s['id'] as String).toList();
       List<Song> popularSongs = [];
-      if (topSongIds.isNotEmpty) {
+      if (topSongsData.isNotEmpty) {
+        final topSongIds = topSongsData.map((s) => s['id'] as String).toList();
         popularSongs = await FirestoreService.getSongsByIds(topSongIds);
-      } else {
-        popularSongs = await FirestoreService.getSongs(limit: 10);
+      } 
+      if (popularSongs.length < 5) {
+        final fallback = await FirestoreService.getSongs(limit: 10);
+        for (var s in fallback) {
+          if (!popularSongs.any((e) => e.id == s.id)) popularSongs.add(s);
+        }
       }
 
       // New Releases from followed artists
@@ -425,20 +466,6 @@ class _SectionTitle extends StatelessWidget {
             letterSpacing: 0.2,
           ),
         ),
-        const Spacer(),
-        if (onSeeAll != null)
-          TextButton(
-            onPressed: onSeeAll,
-            style: TextButton.styleFrom(
-              foregroundColor: _HomeScreenState._mintGreen,
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(0, 32),
-            ),
-            child: const Text(
-              'See all',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            ),
-          ),
       ],
     );
   }

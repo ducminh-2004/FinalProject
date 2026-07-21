@@ -142,6 +142,34 @@ class FirestoreService {
     }
   }
 
+  // Liked Albums
+  static Future<List<String>> getLikedAlbumIds(String userId) async {
+    try {
+      final snapshot = await _db.collection('liked_albums')
+          .where('userId', isEqualTo: userId)
+          .get();
+      return snapshot.docs.map((doc) => doc['albumId'] as String).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<void> toggleLikeAlbum(String userId, String albumId) async {
+    final docId = '${userId}_$albumId';
+    final docRef = _db.collection('liked_albums').doc(docId);
+    final doc = await docRef.get();
+    
+    if (doc.exists) {
+      await docRef.delete();
+    } else {
+      await docRef.set({
+        'userId': userId,
+        'albumId': albumId,
+        'likedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   // ==================== FOLLOW ARTISTS ====================
 
   // Get user's followed artist IDs
@@ -263,7 +291,7 @@ class FirestoreService {
     final songs = await getSongsByIds(songIds);
     
     return Album(
-      id: doc['id'] ?? doc.id,
+      id: doc.id,
       title: doc['title'] ?? '',
       artist: doc['artist'] ?? '',
       coverUrl: doc['coverUrl'] ?? '',
@@ -977,5 +1005,147 @@ class FirestoreService {
     } catch (e) {
       return 'Free';
     }
+  }
+
+  // ==================== ROOM FUNCTIONS ====================
+
+  static Future<String> createRoom(Map<String, dynamic> data) async {
+    final docRef = await _db.collection('rooms').add({
+      ...data,
+      'listenerCount': 1,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  static Future<void> addRoomMember(String roomId, String userId, Map<String, dynamic> data) async {
+    await _db.collection('rooms').doc(roomId).collection('members').doc(userId).set(data);
+    if (data['isHost'] != true) {
+      await _db.collection('rooms').doc(roomId).update({
+        'listenerCount': FieldValue.increment(1),
+      });
+    }
+  }
+
+  static Future<void> removeRoomMember(String roomId, String userId) async {
+    final memberDoc = await _db.collection('rooms').doc(roomId).collection('members').doc(userId).get();
+    if (memberDoc.exists) {
+      final isHost = memberDoc.data()?['isHost'] == true;
+      await memberDoc.reference.delete();
+      if (isHost) {
+        await deleteRoom(roomId);
+      } else {
+        await _db.collection('rooms').doc(roomId).update({
+          'listenerCount': FieldValue.increment(-1),
+        });
+      }
+    }
+  }
+
+  static Future<void> kickMember(String roomId, String userId) async {
+    await removeRoomMember(roomId, userId);
+  }
+
+  static Future<void> deleteRoom(String roomId) async {
+    // In a real app, you'd delete subcollections too
+    await _db.collection('rooms').doc(roomId).delete();
+  }
+
+  static Stream<DocumentSnapshot> watchRoom(String roomId) {
+    return _db.collection('rooms').doc(roomId).snapshots();
+  }
+
+  static Stream<QuerySnapshot> watchRoomMembers(String roomId) {
+    return _db.collection('rooms').doc(roomId).collection('members').snapshots();
+  }
+
+  static Stream<QuerySnapshot> watchRoomQueue(String roomId) {
+    return _db.collection('rooms').doc(roomId).collection('queue').orderBy('order').snapshots();
+  }
+
+  static Stream<QuerySnapshot> watchRoomMessages(String roomId) {
+    return _db.collection('rooms').doc(roomId).collection('messages').orderBy('timestamp', descending: true).snapshots();
+  }
+
+  static Future<void> updateRoom(String roomId, Map<String, dynamic> data) async {
+    await _db.collection('rooms').doc(roomId).update(data);
+  }
+
+  static Future<void> addToRoomQueue(String roomId, Map<String, dynamic> songData, int order) async {
+    await _db.collection('rooms').doc(roomId).collection('queue').add({
+      ...songData,
+      'order': order,
+      'addedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> updateQueueOrder(String roomId, String queueItemId, int newOrder) async {
+    await _db.collection('rooms').doc(roomId).collection('queue').doc(queueItemId).update({
+      'order': newOrder,
+    });
+  }
+
+  static Future<void> removeFromRoomQueue(String roomId, String queueItemId) async {
+    await _db.collection('rooms').doc(roomId).collection('queue').doc(queueItemId).delete();
+  }
+
+  static Future<void> clearRoomQueue(String roomId) async {
+    final snapshot = await _db.collection('rooms').doc(roomId).collection('queue').get();
+    final batch = _db.batch();
+    for (var doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  static Future<void> sendRoomMessage(String roomId, Map<String, dynamic> messageData) async {
+    await _db.collection('rooms').doc(roomId).collection('messages').add({
+      ...messageData,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteRoomMessage(String roomId, String messageId) async {
+    await _db.collection('rooms').doc(roomId).collection('messages').doc(messageId).delete();
+  }
+
+  static Future<void> transferHost(String roomId, String oldHostId, String newHostId, Map<String, dynamic> newHostData) async {
+    final batch = _db.batch();
+    
+    // Update old host to member
+    batch.update(_db.collection('rooms').doc(roomId).collection('members').doc(oldHostId), {
+      'isHost': false,
+    });
+
+    // Update new host
+    batch.update(_db.collection('rooms').doc(roomId).collection('members').doc(newHostId), {
+      'isHost': true,
+    });
+
+    // Update room doc
+    batch.update(_db.collection('rooms').doc(roomId), {
+      'hostId': newHostId,
+      'hostName': newHostData['name'],
+      'hostPhotoUrl': newHostData['photoUrl'],
+    });
+
+    await batch.commit();
+  }
+
+  static Future<Map<String, dynamic>?> getRoomByKey(String roomKey) async {
+    final snapshot = await _db.collection('rooms').where('roomKey', isEqualTo: roomKey).limit(1).get();
+    if (snapshot.docs.isEmpty) return null;
+    final data = snapshot.docs.first.data();
+    data['id'] = snapshot.docs.first.id;
+    return data;
+  }
+
+  static Future<List<Map<String, dynamic>>> getPublicRooms() async {
+    final snapshot = await _db.collection('rooms').where('isPublic', isEqualTo: true).get();
+    return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  }
+
+  static Stream<QuerySnapshot> watchPublicRooms() {
+    return _db.collection('rooms').where('isPublic', isEqualTo: true).snapshots();
   }
 }
