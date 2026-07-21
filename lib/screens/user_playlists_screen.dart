@@ -77,23 +77,44 @@ class _UserPlaylistsScreenState extends State<UserPlaylistsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (controller.text.trim().isEmpty) return;
+              final title = controller.text.trim();
+              if (title.isEmpty) return;
+              
+              // Kiểm tra tên trùng
+              if (_playlists.any((p) => p.title.toLowerCase() == title.toLowerCase())) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Tên playlist đã tồn tại!'),
+                    backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                return;
+              }
               
               final userProvider = context.read<UserProvider>();
               if (userProvider.userId != null) {
-                await FirestoreService.createPlaylist(
-                  userId: userProvider.userId!,
-                  title: controller.text.trim(),
-                );
-                await _loadPlaylists();
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã tạo playlist "${controller.text.trim()}"'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                try {
+                  await FirestoreService.createPlaylist(
+                    userId: userProvider.userId!,
+                    title: title,
                   );
+                  await _loadPlaylists();
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Đã tạo playlist "$title"'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Lỗi: $e')),
+                    );
+                  }
                 }
               }
             },
@@ -242,21 +263,42 @@ class _UserPlaylistsScreenState extends State<UserPlaylistsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (controller.text.trim().isEmpty) return;
-              
-              await FirestoreService.updatePlaylistTitle(
-                playlist.id,
-                controller.text.trim(),
-              );
-              await _loadPlaylists();
-              if (context.mounted) {
-                Navigator.pop(context);
+              final newTitle = controller.text.trim();
+              if (newTitle.isEmpty) return;
+
+              // Kiểm tra tên trùng (trừ chính nó)
+              if (_playlists.any((p) => p.id != playlist.id && p.title.toLowerCase() == newTitle.toLowerCase())) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Đã đổi tên thành "${controller.text.trim()}"'),
+                  const SnackBar(
+                    content: Text('Tên playlist đã tồn tại!'),
+                    backgroundColor: Colors.red,
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
+                return;
+              }
+              
+              try {
+                await FirestoreService.updatePlaylistTitle(
+                  playlist.id,
+                  newTitle,
+                );
+                await _loadPlaylists();
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Đã đổi tên thành "$newTitle"'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Lỗi: $e')),
+                  );
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -383,36 +425,26 @@ class _PlaylistTile extends StatelessWidget {
               ),
               
               // Actions
-              PopupMenuButton<String>(
-                icon: Icon(
-                  Icons.more_vert_rounded,
-                  color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
-                ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                onSelected: (value) {
-                  if (value == 'edit') onEdit();
-                  if (value == 'delete') onDelete();
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 20),
-                        SizedBox(width: 8),
-                        Text('Sửa'),
-                      ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      color: const Color(0xFF0A1F1A).withValues(alpha: 0.5),
+                      size: 20,
                     ),
+                    tooltip: 'Sửa',
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, size: 20, color: Color(0xFFE13300)),
-                        SizedBox(width: 8),
-                        Text('Xóa', style: TextStyle(color: Color(0xFFE13300))),
-                      ],
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Color(0xFFE13300),
+                      size: 20,
                     ),
+                    tooltip: 'Xóa',
                   ),
                 ],
               ),

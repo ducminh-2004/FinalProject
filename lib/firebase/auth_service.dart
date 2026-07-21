@@ -49,11 +49,32 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      final userCredential = await _auth.signInWithCredential(credential);
-      return userCredential.user;
+      try {
+        final userCredential = await _auth.signInWithCredential(credential);
+        return userCredential.user;
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'account-exists-with-different-credential') {
+          // Trả về credential để xử lý liên kết ở tầng UI
+          throw e;
+        }
+        rethrow;
+      }
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
       rethrow;
+    }
+  }
+
+  Future<User?> linkGoogleWithEmail(String email, String password, AuthCredential googleCredential) async {
+    try {
+      // 1. Đăng nhập bằng Email/Password trước
+      final userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      
+      // 2. Liên kết credential Google vào tài khoản vừa đăng nhập
+      final linkedCredential = await userCredential.user?.linkWithCredential(googleCredential);
+      return linkedCredential?.user;
+    } on FirebaseAuthException catch (e) {
+      throw _handleAuthError(e);
     }
   }
 
